@@ -1,0 +1,12 @@
+Bag-Software-Agent: dcm-ip-builder v0.0.0
+BagIt-Payload-Profile-Identifier: https://lzv.nrw/payload_profile.json
+BagIt-Profile-Identifier: https://lzv.nrw/bagit_profile.json
+Bagging-DateTime: 2024-03-27T15:22:38+01:00
+DC-Creator: Max Muster, et al.
+DC-Rights: https://creativecommons.org/licenses/by-nd/3.0/de/
+DC-Rights: info:eu-repo/semantics/openAccess
+DC-Title: Some title
+External-Identifier: 0
+Origin-System-Identifier: id
+Payload-Oxum: 2222.2
+Source-Organization: https://d-nb.info/gnd/2047974-8

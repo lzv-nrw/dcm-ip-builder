@@ -1,0 +1,19 @@
+{
+    "BagIt-Payload-Profile-Info": {
+        "Source-Organization": "Some source organization",
+        "External-Description": "Some description",
+        "Contact-Name": "Some name",
+        "BagIt-Payload-Profile-Identifier": "https://lzv.nrw/payload_profile.json",
+        "Version": "0.3.2"
+    },
+    "Payload-Folders-Required": [
+        "preservation_master"
+    ],
+    "Payload-Folders-Allowed": [
+        "preservation_master", {
+            "regex": "modified_master\/\\d+"
+        }, {
+            "regex": "derivative_copy\/\\d+"
+        }
+    ]
+}

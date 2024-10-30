@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<OAI-PMH>
+	<GetRecord xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+		<record>
+			<header>
+				<identifier>id:0</identifier>
+				<datestamp>2023-12-05</datestamp>
+			</header>
+			<metadata>
+				<mets:mets xmlns:mets="http://www.loc.gov/METS/" xmlns:xlink="http://www.w3.org/1999/xlink" xsi:schemaLocation="http://www.loc.gov/METS/ https://www.loc.gov/standards/mets/mets.xsd">
+					<mets:dmdSec>
+						<mets:mdWrap MIMETYPE="text/xml" MDTYPE="MODS">
+							<mets:xmlData>
+								<mods:mods xmlns:mods="http://www.loc.gov/mods/v3" xsi:schemaLocation="http://www.loc.gov/mods/v3 http://www.loc.gov/standards/mods/v3/mods-3-7.xsd" version="3.7">
+									<mods:titleInfo>
+										<mods:title>Some title</mods:title>
+									</mods:titleInfo>
+									<mods:name>
+										<mods:displayForm>Max Muster, et al.</mods:displayForm>
+									</mods:name>
+									<mods:accessCondition>https://creativecommons.org/licenses/by-nd/3.0/de/</mods:accessCondition>
+									<mods:accessCondition>info:eu-repo/semantics/openAccess</mods:accessCondition>
+								</mods:mods>
+							</mets:xmlData>
+						</mets:mdWrap>
+					</mets:dmdSec>
+				</mets:mets>
+			</metadata>
+		</record>
+	</GetRecord>
+</OAI-PMH>

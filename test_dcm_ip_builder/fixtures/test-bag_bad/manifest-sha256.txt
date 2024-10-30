@@ -1,0 +1,2 @@
+fdfd2a15c6511f17088fc2a2ef63a8dfb54c4fedd96fc8c327def85efc438b76  data/sample.jpg
+693ff2c7571ad12fe91df6ee78f9a10ef3172b4dfc867b09e18b32e6dbda4662  data/sample.tiff
