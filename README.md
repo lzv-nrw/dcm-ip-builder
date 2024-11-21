@@ -1,113 +1,88 @@
-# dcm-ip-builder
+# Digital Curation Manager - IP Builder
 
-## Run with python
-To test the `build` route locally, copy the test IE from the `fixtures` folder
-and set the environment variable `FS_MOUNT_POINT` with
+The 'DCM IP Builder'-API provides functionality to convert Intellectual Entities (IEs) into Information Packages (IPs) and validate IP-format (metadata and payload structure).
+This repository contains the corresponding Flask app definition.
+For the associated OpenAPI-document, please refer to the sibling package [`dcm-ip-builder-api`](https://github.com/lzv-nrw/dcm-ip-builder-api).
+
+The contents of this repository are part of the [`Digital Curation Manager`](https://github.com/lzv-nrw/digital-curation-manager).
+
+## Local install
+Make sure to include the extra-index-url `https://zivgitlab.uni-muenster.de/api/v4/projects/9020/packages/pypi/simple` in your [pip-configuration](https://pip.pypa.io/en/stable/cli/pip_install/#finding-packages) to enable an automated install of all dependencies.
+Using a virtual environment is recommended.
+
+1. Install with
+   ```
+   pip install .
+   ```
+1. Configure service environment to fit your needs ([see here](#environmentconfiguration)).
+1. Run app as
+   ```
+   flask run --port=8080
+   ```
+1. To manually use the API, either run command line tools like `curl` as, e.g.,
+   ```
+   curl -X 'POST' \
+     'http://localhost:8080/validate/ip' \
+     -H 'accept: application/json' \
+     -H 'Content-Type: application/json' \
+     -d '{
+     "validation": {
+       "target": {
+         "path": "jobs/abcde-12345-fghijk-67890"
+       },
+       "modules": [
+         "bagit_profile",
+         "payload_structure",
+         "payload_integrity",
+         "file_format"
+       ],
+       "args": {
+         "bagit_profile": {
+           "baginfoTagCaseSensitive": true,
+           "profileUrl": "bagit_profiles/dcm_bagit_profile_v1.0.0.json"
+         },
+         "payload_structure": {
+           "profileUrl": "bagit_profiles/dcm_bagit_profile_v1.0.0.json"
+         }
+       }
+     }
+   }'
+   ```
+   or run a gui-application, like Swagger UI, based on the OpenAPI-document provided in the sibling package [`dcm-ip-builder-api`](https://github.com/lzv-nrw/dcm-ip-builder-api).
+
+### Extra dependencies
+
+#### Metadata-Mapping
+The IP Builder app-package defines an optional dependency for the [`dcm-metadata-mapper`](https://github.com/lzv-nrw/dcm-metadata-mapper) which can significantly simplify the definition of mapping scripts (as required by the `POST-/build` endpoint).
+This extra can be installed with
 ```
-mkdir -p test_folder
-cp -r test_dcm_ip_builder/fixtures/test-ie test_folder/test-ie
-cp -r test_dcm_ip_builder/fixtures/test-bag test_folder/test-bag
-export FS_MOUNT_POINT=test_folder
+pip install ".[mapping]"
 ```
 
-Run the 'DCM IP Builder'-app locally with
-```
-flask run --port=8080
-```
-## Run with Docker
-### Container setup
-Use the `compose.yml` to start the `DCM IP Builder`-Container as a service:
+## Run with docker compose
+Simply run
 ```
 docker compose up
 ```
-(to rebuild use `docker compose build`).
+By default, the app listens on port 8080.
+The docker volume `file_storage` is automatically created and data will be written in `/file_storage`.
+To rebuild an already existing image, run `docker compose build`.
 
-A Swagger UI is hosted at
+Additionally, a Swagger UI is hosted at
 ```
 http://localhost/docs
 ```
-while (by-default) the app listens to port `8080`.
 
-Afterwards, stop the process for example with `Ctrl`+`C` and enter `docker compose down`.
-
-The build process requires authentication with `zivgitlab.uni-muenster.de` in order to gain access to the required python dependencies.
-The Dockerfiles are configured to use the information from `~/.netrc` for this authentication (a gitlab api-token is required).
-
-### File system setup
-The currently used docker volume is set up automatically on `docker compose up`. However, in order to move data from the local file system into the container, the container also needs to mount this local file system (along with the volume). To this end, the `compose.yml` needs to be modified before startup with
-```
-    ...
-      - file_storage:/file_storage
-      - type: bind
-        source: ./test_dcm_ip_builder/fixtures
-        target: /local
-    ports:
-      ...
-```
-By then opening an interactive session in the container (i.e., after running the compose-script) with
-```
-docker exec -it <container-id> sh
-```
-the example bags from the test-related fixtures-directory can be copied over to the volume:
-```
-cp -r /local/* /file_storage/
-```
-(The modification to the file `compose.yml` can be reverted after copying.)
-
-## Experiment locally
-The POST-method of the `build` route can be tested with a dummy configuration with
-```
-curl -X 'POST' \
-  'http://localhost:8080/build' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "build": {
-      "target": {
-        "path": "test-ie"
-      },
-      "configuration": "gASV0AMAAAAAAACMCmRpbGwuX2RpbGyUjAxfY3JlYXRlX3R5cGWUk5QoaACMCl9sb2FkX3R5cGWUk5SMBHR5cGWUhZRSlIwLQnVpbGRDb25maWeUaASMBm9iamVjdJSFlFKUhZR9lCiMCl9fbW9kdWxlX1+UjA9mYWtlX2NvbmZpZ191cmyUjAlDT05WRVJURVKUaAIoaAeMDkNvbnZlcnRlckNsYXNzlGgLhZR9lChoDmgPjAhnZXRfZGljdJRoAIwQX2NyZWF0ZV9mdW5jdGlvbpSTlChoAIwMX2NyZWF0ZV9jb2RllJOUKEMCAAGUSwJLAEsASwJLAUtDQwRkAFMAlE6FlCmMBHNlbGaUjA9zb3VyY2VfbWV0YWRhdGGUhpSMCDxzdHJpbmc+lGgUSwNDAgQBlCkpdJRSlH2UjAhfX25hbWVfX5RoD3NoFE5OdJRSlH2UfZQojA9fX2Fubm90YXRpb25zX1+UfZSMDF9fcXVhbG5hbWVfX5SMF0NvbnZlcnRlckNsYXNzLmdldF9kaWN0lHWGlGKMB19fZG9jX1+UTnV0lFKUjAhidWlsdGluc5SMB3NldGF0dHKUk5RoMGgraBGHlFIwjAZNQVBQRVKUaAIoaAeMC01hcHBlckNsYXNzlGgLhZR9lChoDmgPjAxnZXRfbWV0YWRhdGGUaBYoaBgoQwIAAZRLA0sASwBLA0sBS0NoGmgbKWgcjANrZXmUaB2HlGgfaDlLBmggKSl0lFKUfZRoJGgPc2g5Tk50lFKUfZR9lChoKX2UaCuMGE1hcHBlckNsYXNzLmdldF9tZXRhZGF0YZR1hpRiaC5OdXSUUpRoM2hIaCtoNoeUUjBoLk51dJRSlGg/KGgkaA9oLk6MC19fcGFja2FnZV9flIwAlIwKX19sb2FkZXJfX5ROjAhfX3NwZWNfX5SMEV9mcm96ZW5faW1wb3J0bGlilIwKTW9kdWxlU3BlY5STlCmBlH2UKIwEbmFtZZRoD4wGbG9hZGVylE6MBm9yaWdpbpSMEmZha2VfY29uZmlnX3VybC5weZSMDGxvYWRlcl9zdGF0ZZROjBpzdWJtb2R1bGVfc2VhcmNoX2xvY2F0aW9uc5ROjA1fc2V0X2ZpbGVhdHRylImMB19jYWNoZWSUTnVijAxfX2J1aWx0aW5zX1+UY2J1aWx0aW5zCl9fZGljdF9fCmgRaDBoNmhIaAhoS3UwaCMoaCRoD2guTmhMaE1oTk5oT2hTaF1jYnVpbHRpbnMKX19kaWN0X18KaBFoMGg2aEhoCGhLdTBoM2hLaCtoCIeUUjAu"
-    }
-  }'
-```
-
-Then call the GET-method of the `report` route with (replace `<token_value>`)
-```
-http://localhost:8080/report?token=<token_value>
-```
-In most cases, it is be more convenient to get this information via web-browser by simply entering the respective url
-```
-http://localhost:8080/report?token=<token_value>
-```
-When using the dummy build configuration from above, the `IP` is expected to be invalid (`valid: false` in `report`).
-
-A valid bag can be tested with
-```
-curl -X 'POST' \
-  'http://localhost:8080/validate/ip' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "validation": {
-      "target": {
-        "path": "test-bag"
-      },
-      "modules": [
-        "bagit_profile"
-      ]
-    }
-  }'
-```
-
-Finally, when running with python, delete the test directory with
-```
-rm -r test_folder
-```
+Afterwards, stop the process and enter `docker compose down`.
 
 ## Tests
-Run `flask` test-module (after installing `dev-requirements.txt`) via
+Install additional dev-dependencies with
 ```
-pytest -v -s --cov dcm_ip_builder
+pip install -r dev-requirements.txt
+```
+Run unit-tests with
+```
+pytest -v -s
 ```
 
 ## Environment/Configuration
@@ -123,7 +98,7 @@ Additionally this service provides environment options for
 * `OrchestratedAppConfig`, and
 * `FSConfig`
 
-as listed [here](https://github.com/lzv-nrw/dcm-common/-/tree/dev?ref_type=heads#app-configuration).
+as listed [here](https://github.com/lzv-nrw/dcm-common#app-configuration).
 
 # Contributors
 * Sven Haubold
@@ -133,3 +108,4 @@ as listed [here](https://github.com/lzv-nrw/dcm-common/-/tree/dev?ref_type=heads
 * Michael Rahier
 * Steffen Richters-Finger
 * Malte Windrath
+* Roman Kudinov
