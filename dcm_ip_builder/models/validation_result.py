@@ -7,25 +7,20 @@ from dataclasses import dataclass, field
 
 from dcm_common.models import DataModel
 
-from dcm_object_validator.models import ValidationResult as _ValidationResult
+from dcm_ip_builder.plugins.validation import ValidationPluginResult
 
 
 @dataclass
-class ValidationResult(_ValidationResult):
-    logid: Optional[list[str]] = field(default_factory=list)
+class ValidationResult(DataModel):
+    """
+    Validation result `DataModel`
 
-    @DataModel.serialization_handler("logid", "logId")
-    @classmethod
-    def logid_serialization(cls, value):
-        """Performs `logid`-serialization."""
-        if value is None:
-            DataModel.skip()
-        return value
+    Keyword arguments:
+    success -- overall success of build process
+    valid -- overall validity; true if IP is valid
+    details -- detailed validation results by plugin
+    """
 
-    @DataModel.deserialization_handler("logid", "logId")
-    @classmethod
-    def logid_deserialization(cls, value):
-        """Performs `logid`-deserialization."""
-        if value is None:
-            DataModel.skip()
-        return value
+    success: Optional[bool] = None
+    valid: Optional[bool] = None
+    details: dict[str, ValidationPluginResult] = field(default_factory=dict)

@@ -7,6 +7,7 @@ from dcm_common.services.tests import (
 
 from dcm_ip_builder import app_factory
 from dcm_ip_builder.config import AppConfig
+from dcm_ip_builder.plugins.mapping import DemoMappingPlugin
 
 
 # define fixture-directory
@@ -20,11 +21,6 @@ def _file_storage():
     return Path("test_dcm_ip_builder/file_storage")
 
 
-@pytest.fixture(name="minimal_build_config")
-def _minimal_build_config(fixtures):
-    return "file://" + str((fixtures / "test-config.py").absolute())
-
-
 @pytest.fixture(name="testing_config")
 def _testing_config(file_storage):
     """Returns test-config"""
@@ -35,15 +31,15 @@ def _testing_config(file_storage):
         ORCHESTRATION_ORCHESTRATOR_INTERVAL = 0.001
         ORCHESTRATION_ABORT_NOTIFICATIONS_STARTUP_INTERVAL = 0.01
         TESTING = True
-        USE_OBJECT_VALIDATOR = False
         FS_MOUNT_POINT = file_storage
 
-        BAGIT_PROFILE_URL = "https://lzv.nrw/bagit_profile.json"
+        MAPPING_PLUGINS = [DemoMappingPlugin]
+        BAGIT_PROFILE_URL = "https://lzv.nrw/test_bagit_profile.json"
         BAGIT_PROFILE = {
             "BagIt-Profile-Info": {
                 "Source-Organization": "Some source organization",
                 "External-Description": "Some description",
-                "BagIt-Profile-Identifier": "https://lzv.nrw/bagit_profile.json",
+                "BagIt-Profile-Identifier": "https://lzv.nrw/test_bagit_profile.json",
                 "Version": "0.3.2"
             },
             "Bag-Info": {
@@ -79,16 +75,10 @@ def _testing_config(file_storage):
             "Accept-BagIt-Version": ["1.0"]
         }
         # payload profile
-        PAYLOAD_PROFILE_URL = "https://lzv.nrw/payload_profile.json"
+        PAYLOAD_PROFILE_URL = "https://lzv.nrw/test_payload_profile.json"
         PAYLOAD_PROFILE = {
             "BagIt-Payload-Profile-Info": {
                 "Version": "0.3.2"
-            }
-        }
-        DEFAULT_VALIDATOR_KWARGS = {
-            "bagit_profile": {
-                "bagit_profile_url": BAGIT_PROFILE_URL,
-                "bagit_profile": BAGIT_PROFILE,
             }
         }
     return TestingConfig

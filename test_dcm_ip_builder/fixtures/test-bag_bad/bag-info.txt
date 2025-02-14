@@ -1,6 +1,6 @@
 Bag-Software-Agent: dcm-ip-builder_v0.0.0
-BagIt-Payload-Profile-Identifier: https://lzv.nrw/payload_profile.json
-BagIt-Profile-Identifier: https://lzv.nrw/bagit_profile.json
+BagIt-Payload-Profile-Identifier: https://lzv.nrw/test_payload_profile.json
+BagIt-Profile-Identifier: https://lzv.nrw/test_bagit_profile.json
 Bagging-DateTime: 2024-03-27T15:20:20+01:00
 DC-Rights: https://creativecommons.org/licenses/by-nd/3.0/de/
 DC-Rights: info:eu-repo/semantics/openAccess

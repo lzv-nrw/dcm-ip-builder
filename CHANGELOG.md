@@ -1,5 +1,26 @@
 # Changelog
 
+## [X.Y.Z] - 2025-02-14
+
+### Changed
+
+- switched to non root-user in Dockerfile
+- migrated to API v4
+
+### Added
+
+- added support for dynamically loaded mapping-plugins
+- added mapping-plugin system and utilities
+- added payload-structure validation-plugin
+- added BagIt Profile validation-plugin based on the `bagit_profile` library
+- added bag builder plugin based on `bagit` library
+
+### Removed
+
+- removed docker compose file
+- removed `dcm-object-validator` dependency
+- removed `dcm-bag-builder` dependency
+
 ## [4.0.1] - 2024-11-21
 
 ### Changed

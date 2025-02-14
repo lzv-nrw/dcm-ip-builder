@@ -7,6 +7,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 
 from dcm_common.models import DataModel
+from dcm_common.plugins import PluginResult
 
 
 @dataclass
@@ -15,14 +16,19 @@ class BuildResult(DataModel):
     Build result `DataModel`
 
     Keyword arguments:
+    build -- property to differentiate the job results.
+             Only uses default value to allow model validation in the sdk.
+    success -- overall success of build process
     path -- path to output directory relative to shared file system
-    valid -- overall validity; `True` if valid
-    logid -- list of ids for related reports
+    valid -- overall validity; true if IP is valid
+    details -- detailed results by plugin
     """
 
+    build_plugin: str = field(default_factory=lambda: "build_plugin")
+    success: Optional[bool] = None
     path: Optional[Path] = None
     valid: Optional[bool] = None
-    logid: list[str] = field(default_factory=list)
+    details: dict[str, PluginResult] = field(default_factory=dict)
 
     @DataModel.serialization_handler("path")
     @classmethod
@@ -39,15 +45,3 @@ class BuildResult(DataModel):
         if value is None:
             DataModel.skip()
         return Path(value)
-
-    @DataModel.serialization_handler("logid", "logId")
-    @classmethod
-    def logid_serialization(cls, value):
-        """Performs `logid`-serialization."""
-        return value
-
-    @DataModel.deserialization_handler("logid", "logId")
-    @classmethod
-    def logid_deserialization(cls, value):
-        """Performs `logid`-deserialization."""
-        return value

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+  <responseDate>2024-12-04T09:07:29.058274</responseDate>
+  <request identifier="test:oai_dc:d2d5513f-0ed1-4db5-a489-aa4c33eb8325" metadataPrefix="oai_dc" verb="GetRecord">https://www.lzv.nrw/</request>
+  <GetRecord>
+    <record>
+      <header>
+        <identifier>test:oai_dc:d2d5513f-0ed1-4db5-a489-aa4c33eb8325</identifier>
+        <datestamp>2024-12-04</datestamp>
+      </header>
+      <metadata>
+        <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+          <dc:language>en</dc:language>
+          <dc:creator>Thistlethwaite, Bartholomew</dc:creator>
+          <dc:contributor>Harvard University</dc:contributor>
+          <dc:subject>Dynamical Systems</dc:subject>
+          <dc:date>2024-12-04</dc:date>
+          <dc:type>article</dc:type>
+          <dc:format>application/pdf</dc:format>
+          <dc:identifier>https://www.lzv.nrw/some_file</dc:identifier>
+          <dc:rights>CC BY-NC 4.0</dc:rights>
+          <dc:rights>info:eu-repo/semantics/openAccess</dc:rights>
+        </oai_dc:dc>
+      </metadata>
+    </record>
+  </GetRecord>
+</OAI-PMH>
