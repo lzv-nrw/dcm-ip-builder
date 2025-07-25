@@ -79,6 +79,7 @@ class BuildView(services.OrchestratedView):
                     mapping_plugin=PluginConfig.from_json(
                         config.request_body["build"]["mapping_plugin"]
                     ),
+                    validate=config.request_body["build"]["validate"],
                     bagit_profile_url=(
                         config.request_body["build"].get(
                             "bagit_profile_url", None
@@ -201,7 +202,6 @@ class BuildView(services.OrchestratedView):
         push()
 
         # Build IP and append plugin result into details
-        report.data.build_plugin = self.config.build_plugin.name
         report.data.details["build"] = self.config.build_plugin.get(
             None,
             src=str(build_config.target.path),
@@ -251,7 +251,7 @@ class BuildView(services.OrchestratedView):
         push()
 
         # validate IP, if required
-        if self.config.DO_VALIDATION:
+        if build_config.validate:
             ValidationView(self.config).validate(
                 push,
                 report=report,
@@ -267,7 +267,6 @@ class BuildView(services.OrchestratedView):
                 report.data.success = True
         else:
             report.data.success = True
-            report.data.valid = False
         push()
 
     def generate_dc_xml(self, src_path: Path, dest_path: Path) -> bool:

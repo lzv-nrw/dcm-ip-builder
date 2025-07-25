@@ -60,7 +60,7 @@ class PayloadStructurePlugin(ValidationPlugin):
     """
 
     _NAME = "payload-structure"
-    _DISPLAY_NAME = "Payload Structure Validation"
+    _DISPLAY_NAME = "Payload-Structure-Validation-Plugin"
     _DESCRIPTION = "Payload structure validation."
 
     def __init__(
@@ -387,7 +387,7 @@ class PayloadStructurePlugin(ValidationPlugin):
                 context.push()
 
         context.result.log.log(
-            Context.INFO, body=f"'{path}': Validating directory."
+            Context.INFO, body=f"Validating directory '{path}'."
         )
         context.set_progress(f"validating directory '{path}'")
         context.push()
@@ -422,7 +422,7 @@ class PayloadStructurePlugin(ValidationPlugin):
             # directory valid
             context.result.valid = True
             context.result.log.log(
-                Context.INFO, body=f"'{path}': Directory is valid."
+                Context.INFO, body=f"Directory '{path}' is valid."
             )
         else:
             # directory invalid
@@ -435,7 +435,7 @@ class PayloadStructurePlugin(ValidationPlugin):
                 + errors_files_cap,
             )
             context.result.log.log(
-                Context.INFO, body=f"'{path}': Directory is invalid."
+                Context.INFO, body=f"Directory '{path}' is invalid."
             )
 
         context.result.success = True

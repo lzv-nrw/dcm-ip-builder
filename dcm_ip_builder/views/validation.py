@@ -3,8 +3,10 @@ Validation View-class definition
 """
 
 from typing import Optional
+from pathlib import Path
 
 from flask import Blueprint, jsonify
+import bagit
 from data_plumber_http.decorators import flask_handler, flask_args, flask_json
 from dcm_common import LoggingContext as Context
 from dcm_common import services
@@ -71,6 +73,30 @@ class ValidationView(services.OrchestratedView):
             name="IP Builder"
         )
 
+    def load_identifiers(
+        self, path: Path, report: ValidationReport
+    ) -> None:
+        """
+        Loads identifiers from IP-metadata into `report.data`. Fails
+        silently.
+        """
+        try:
+            baginfo = bagit.Bag(str(path)).info
+        except bagit.BagError as exc_info:
+            # log but do not change 'valid'-flag
+            # (validation is done by custom request)
+            report.log.log(
+                Context.ERROR,
+                body=f"Unable to load IP-identifiers: {exc_info}",
+            )
+        else:
+            report.data.external_id = baginfo.get(
+                "External-Identifier"
+            )
+            report.data.origin_system_id = baginfo.get(
+                "Origin-System-Identifier"
+            )
+
     def validate(
         self,
         push,
@@ -105,7 +131,11 @@ class ValidationView(services.OrchestratedView):
                 "plugin": self.config.validation_plugins[plugin_name],
                 "args": {}
             }
-            for plugin_name in ["bagit-profile", "payload-structure"]
+            for plugin_name in [
+                "bagit-profile",
+                "payload-structure",
+                "significant-properties",
+            ]
         }
         if validation_config.bagit_profile_url:
             # Register any profile url from request
@@ -145,8 +175,11 @@ class ValidationView(services.OrchestratedView):
                     | config["args"]
                 ),
             )
-            # Copy all error messages in the main log
-            report.log.merge(context.result.log.pick(Context.ERROR))
+            # Copy all error and warning messages in the main log
+            report.log.merge(
+                context.result.log.pick(Context.ERROR, Context.WARNING)
+            )
+
             if not context.result.success:
                 report.log.log(
                     Context.ERROR,
@@ -171,6 +204,7 @@ class ValidationView(services.OrchestratedView):
                     Context.INFO,
                     body="Target is valid.",
                 )
+                self.load_identifiers(validation_config.target.path, report)
             else:
                 plugins_with_errors = sum(
                     not p.valid for p in report.data.details.values()

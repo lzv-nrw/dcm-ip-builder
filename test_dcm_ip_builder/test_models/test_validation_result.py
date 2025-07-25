@@ -15,6 +15,8 @@ test_validation_result_json = get_model_serialization_test(
             {
                 "success": True,
                 "valid": True,
+                "origin_system_id": "a",
+                "external_id": "b",
                 "details": {"0": ValidationPluginResult()},
             },
         ),

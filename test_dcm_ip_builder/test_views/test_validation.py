@@ -35,6 +35,8 @@ def test_validate_minimal(
     # wait until job is completed
     json = wait_for_report(client, token)
     assert json["data"]["valid"]
+    assert json["data"]["originSystemId"] == "id"
+    assert json["data"]["externalId"] == "0"
 
 
 @pytest.mark.parametrize(
@@ -67,7 +69,9 @@ def test_validate(
 
     # wait until job is completed
     json = wait_for_report(client, token)
-    assert json["data"]["valid"] == valid
+    assert json["data"]["valid"] is valid
+    assert ("originSystemId" in json["data"]) is valid
+    assert ("externalId" in json["data"]) is valid
 
 
 @pytest.mark.parametrize(
@@ -96,7 +100,7 @@ def test_validate_with_argument(
 
     # fake get_profile
     patcher_get_profile = mock.patch(
-        "bagit_profile.Profile.get_profile",
+        "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.get_profile",
         side_effect=lambda *args, **kwargs: testing_config.BAGIT_PROFILE
     )
     patcher_get_profile.start()
@@ -113,7 +117,9 @@ def test_validate_with_argument(
 
     # wait until job is completed
     json = wait_for_report(client, token)
-    assert json["data"]["valid"] == valid
+    assert json["data"]["valid"] is valid
+    assert ("originSystemId" in json["data"]) is valid
+    assert ("externalId" in json["data"]) is valid
 
     patcher_get_profile.stop()
 

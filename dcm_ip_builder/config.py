@@ -15,12 +15,17 @@ import dcm_ip_builder_api
 
 import dcm_ip_builder
 from dcm_ip_builder.plugins.mapping import (
-    DemoMappingPlugin, GenericB64Plugin, GenericUrlPlugin
+    DemoMappingPlugin,
+    GenericB64Plugin,
+    GenericUrlPlugin,
+    GenericStringPlugin,
+    XSLTMappingPlugin,
 )
 from dcm_ip_builder.plugins import (
     BagItBagBuilder,
     BagItProfilePlugin,
     PayloadStructurePlugin,
+    SignificantPropertiesPlugin,
 )
 
 
@@ -90,13 +95,16 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
         int(os.environ.get("ALLOW_GENERIC_MAPPING") or 0)
     ) == 1
     USE_DEMO_PLUGIN = int(os.environ.get("USE_DEMO_PLUGIN") or 0) == 1
-    MAPPING_PLUGINS = [] + (
-        [GenericB64Plugin, GenericUrlPlugin] if ALLOW_GENERIC_MAPPING else []
-    ) + (
-        [DemoMappingPlugin] if USE_DEMO_PLUGIN else []
+    MAPPING_PLUGINS = (
+        [XSLTMappingPlugin]
+        + (
+            [GenericB64Plugin, GenericUrlPlugin, GenericStringPlugin]
+            if ALLOW_GENERIC_MAPPING
+            else []
+        )
+        + ([DemoMappingPlugin] if USE_DEMO_PLUGIN else [])
     )
     IP_OUTPUT = Path("ip")
-    DO_VALIDATION = True
     # Algorithms for the manifest and tag-manifest files
     MANIFESTS = (
         json.loads(os.environ["MANIFESTS"])
@@ -111,7 +119,26 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
     # Path to the file with the metadata
     META_DIRECTORY = Path("meta")
     SOURCE_METADATA = Path("source_metadata.xml")
+    SIGNIFICANT_PROPERTIES = Path("significant_properties.xml")
     DC_METADATA = Path("dc.xml")
+
+    # ------ VALIDATION ------
+    # significant_properties.xml
+    VALIDATION_SIGPROPXML_XSD = \
+        os.environ.get("VALIDATION_SIGPROPXML_XSD") \
+        or "https://www.loc.gov/standards/premis/premis.xsd"
+    VALIDATION_SIGPROPXML_XML_SCHEMA_VERSION = \
+        os.environ.get("VALIDATION_SIGPROPXML_XML_SCHEMA_VERSION") or "1.0"
+    VALIDATION_SIGPROPXML_NAME = \
+        os.environ.get("VALIDATION_SIGPROPXML_NAME") \
+        or "premis.xml schema v3.0"
+    VALIDATION_SIGPROP_KNOWN_TYPES = [
+        "content",
+        "context",
+        "appearance",
+        "behavior",
+        "structure",
+    ]
 
     # Load the API document
     API_DOCUMENT = Path(dcm_ip_builder_api.__file__).parent / "openapi.yaml"
@@ -147,6 +174,13 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
                 default_profile_url=self.PAYLOAD_PROFILE_URL,
                 default_profile=self.PAYLOAD_PROFILE
             ),
+            SignificantPropertiesPlugin.name: SignificantPropertiesPlugin(
+                xml_path=self.META_DIRECTORY / self.SIGNIFICANT_PROPERTIES,
+                schema=self.VALIDATION_SIGPROPXML_XSD,
+                version=self.VALIDATION_SIGPROPXML_XML_SCHEMA_VERSION,
+                schema_name=self.VALIDATION_SIGPROPXML_NAME,
+                known_sig_prop=self.VALIDATION_SIGPROP_KNOWN_TYPES,
+            ),
         }
         super().__init__()
 
@@ -179,7 +213,6 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
             "tag_manifest": self.TAG_MANIFESTS,
             "default_profile": self.BAGIT_PROFILE_URL,
             "default_payload_profile": self.PAYLOAD_PROFILE_URL,
-            "do_validation": self.DO_VALIDATION
         }
         settings["validation"] = {
             "default_profile": self.BAGIT_PROFILE_URL,

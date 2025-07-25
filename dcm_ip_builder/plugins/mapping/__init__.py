@@ -1,6 +1,12 @@
 from .interface import MappingPlugin, MappingPluginResult
-from .generic import GenericMapper, GenericB64Plugin, GenericUrlPlugin
+from .generic import (
+    GenericMapper,
+    GenericB64Plugin,
+    GenericUrlPlugin,
+    GenericStringPlugin,
+)
 from .demo import DemoMappingPlugin
+from .xslt import XSLTMappingPlugin
 
 
 __all__ = [
@@ -9,5 +15,7 @@ __all__ = [
     "GenericMapper",
     "GenericB64Plugin",
     "GenericUrlPlugin",
+    "GenericStringPlugin",
     "DemoMappingPlugin",
+    "XSLTMappingPlugin",
 ]

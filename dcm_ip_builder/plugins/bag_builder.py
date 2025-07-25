@@ -4,11 +4,11 @@ based on the bagit library, that can be used by the 'IP Builder'-app
 to build IPs from IEs.
 """
 
-
 from typing import Optional
 from dataclasses import dataclass, field
 from pathlib import Path
-from shutil import copytree, rmtree
+from shutil import copytree, rmtree, move
+from tempfile import TemporaryDirectory
 
 import bagit
 from dcm_common.plugins import (
@@ -332,84 +332,79 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
         # check whether output is valid
         if dest is not None:
             Path(dest).mkdir(exist_ok=exist_ok)
-        # find and prepare temporary output-dir
-        _dest = self.new_output()
-        if _dest is None:
-            context.result.log.log(
-                Context.ERROR,
-                body="Unable to generate output directory (maximum retries"
-                + " exceeded)."
+        # use temporary output as work-directory
+        # tmp_dir is deleted when context manager is exited
+        # use TMPDIR to explicitly set tmp-directory; see also
+        # https://docs.python.org/3/library/tempfile.html#tempfile.mkstemp
+        with TemporaryDirectory() as tmp_dir:
+            _dest = Path(tmp_dir)
+            copytree(
+                src, _dest, dirs_exist_ok=True
+            )  # bagit works on copy of ie
+
+            # Create the bag
+            bag = self._call_bagit(
+                context=context,
+                src=_dest,
+                bag_info=bag_info,
+                encoding=encoding,
             )
-            return
-        copytree(src, _dest, dirs_exist_ok=True)  # bagit works on copy of ie
 
-        # Create the bag
-        bag = self._call_bagit(
-            context=context,
-            src=_dest,
-            bag_info=bag_info,
-            encoding=encoding
-        )
+            # remove the tmp-data and exit if a problem has occurred
+            if bag is None:
+                rmtree(_dest)
+                context.result.log.log(
+                    Context.ERROR,
+                    body="Initial bag validation failed (bagit.Bag.is_valid "
+                    + "returned False).",
+                )
+                return
 
-        # remove the tmp-data and exit if a problem has occurred
-        if bag is None:
-            rmtree(_dest)
-            context.result.log.log(
-                Context.ERROR,
-                body="Initial bag validation failed (bagit.Bag.is_valid "
-                + "returned False)."
-            )
-            return
+            # move result to dest
+            if dest is None:
+                rmtree(src)
+                bag_path = src
+            else:
+                rmtree(dest)
+                bag_path = dest
 
-        # move result to dest
-        if dest is None:
-            rmtree(src)
-            bag_path = src
-        else:
-            rmtree(dest)
-            bag_path = dest
+            # using pathlib's 'rename' method (that uses os.rename)
+            # does not support cross-filesystem/cross-device renaming, which
+            # leads to an invalid cross-device link, when running in docker
+            move(_dest / "data", bag_path)
 
-        (_dest / "data").rename(bag_path)
         bag = bagit.Bag(str(bag_path))
-        _dest.rmdir()
 
         # Delete the manifest files that were not required
-        for excessive_alg in (
-            set(self._checksums) - set(self.manifests)
-        ):
+        for excessive_alg in set(self._checksums) - set(self.manifests):
             mfile = bag_path / Path("manifest-" + excessive_alg + ".txt")
             mfile.unlink()
         # Generate new tag-manifest files,
         # without generating new manifest files (-> manifests=False).
         bag.save(processes=1, manifests=False)
         # Delete the tag-manifest files that were not required
-        for excessive_alg in (
-            set(self._checksums) - set(self.tagmanifests)
-        ):
-            tag_mfile = bag_path / Path("tagmanifest-" + excessive_alg + ".txt")
+        for excessive_alg in set(self._checksums) - set(self.tagmanifests):
+            tag_mfile = bag_path / Path(
+                "tagmanifest-" + excessive_alg + ".txt"
+            )
             tag_mfile.unlink()
 
         # Perform the basic validation routine from the bagit library
         if not bag.is_valid(fast=False, completeness_only=False):
-            rmtree(_dest)
             context.result.log.log(
                 Context.ERROR,
                 body="Secondary bag validation failed (bagit.Bag.is_valid "
-                + "returned False)."
+                + "returned False).",
             )
             return
 
         # success
-        context.result.log.log(
-            Context.INFO,
-            body="Successfully created bag."
-        )
+        context.result.log.log(Context.INFO, body="Successfully created bag.")
 
         context.result.path = bag_path
         context.result.success = True
         context.set_progress("success")
         context.push()
-        return
 
     def _get(
         self, context: BagItPluginContext, /, **kwargs

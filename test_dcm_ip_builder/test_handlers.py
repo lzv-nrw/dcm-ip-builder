@@ -117,6 +117,10 @@ def _build_handler(fixtures):
             {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}},
             Responses.GOOD.status
         ),
+        (  # validate
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "validate": False}},
+            Responses.GOOD.status
+        ),
     ]),
     ids=[f"stage {i+1}" for i in range(len(pytest_args))]
 )

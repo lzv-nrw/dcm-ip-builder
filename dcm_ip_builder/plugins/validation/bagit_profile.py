@@ -20,6 +20,36 @@ from .interface import (
 )
 
 
+# ------------------------------------------------------------------------
+# FIXME this provisional patch does not actually "understand" the core-
+# issuewhen running many jobs in sequence, the execution of Jobs could
+# freeze on call of 'logging.error'
+# pylint: disable=wrong-import-order
+from urllib.request import urlopen
+import sys
+import json
+
+
+class PatchedProfile(Profile):
+    """Patched to avoid potential deadlock on 'logging.error'."""
+    def get_profile(self):
+        try:
+            f = urlopen(self.url)
+            profile = f.read()
+            if sys.version_info > (3,):
+                profile = profile.decode("utf-8")
+            profile = json.loads(profile)
+        except Exception as e:  # pylint: disable=broad-except
+            print("Cannot retrieve profile from %s: %s", self.url, e)
+            # this can cause deadlocks for some reason..
+            # logging.error("Cannot retrieve profile from %s: %s", self.url, e)
+            # This is a fatal error.
+            sys.exit(1)
+
+        return profile
+# ------------------------------------------------------------------------
+
+
 class BagItProfilePlugin(ValidationPlugin):
     """
     BagIt profile validation based on the BagIt Profile library [1].
@@ -63,7 +93,7 @@ class BagItProfilePlugin(ValidationPlugin):
         self.default_profile_url = str(default_profile_url)
         self.default_profile = default_profile
         self.ignore_baginfo_tag_case = not baginfo_tag_case_sensitive
-        self.default_bagit_profile = Profile(
+        self.default_bagit_profile = PatchedProfile(
             url=self.default_profile_url,
             profile=self.default_profile,
             ignore_baginfo_tag_case=self.ignore_baginfo_tag_case,
@@ -82,7 +112,7 @@ class BagItProfilePlugin(ValidationPlugin):
         if "profile_url" in kwargs:
             # ensure bagit_profile.Profile can be instantiated
             try:
-                Profile(
+                PatchedProfile(
                     url=kwargs["profile_url"],
                     profile=None
                 )
@@ -230,7 +260,7 @@ class BagItProfilePlugin(ValidationPlugin):
             )
             context.set_progress("loading profile")
             context.push()
-            bagit_profile = Profile(
+            bagit_profile = PatchedProfile(
                 url=kwargs["profile_url"],
                 profile=None,
                 ignore_baginfo_tag_case=self.ignore_baginfo_tag_case,
@@ -247,7 +277,7 @@ class BagItProfilePlugin(ValidationPlugin):
                 context.set_progress("loading profile")
                 context.push()
                 try:
-                    bagit_profile = Profile(
+                    bagit_profile = PatchedProfile(
                         url=profile_url,
                         profile=None,
                         ignore_baginfo_tag_case=self.ignore_baginfo_tag_case,

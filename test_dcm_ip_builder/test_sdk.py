@@ -116,7 +116,8 @@ def test_build_report(
                 "mappingPlugin": {
                     "plugin": "demo",
                     "args": {}
-                }
+                },
+                "validate": True
             }
         }
     )
@@ -133,6 +134,47 @@ def test_build_report(
     assert (
         testing_config().FS_MOUNT_POINT / report.data.actual_instance.path
     ).is_dir()
+    assert report.data.actual_instance.origin_system_id == "id"
+    assert report.data.actual_instance.external_id == "0"
+
+
+def test_build_wo_validate_report(
+    build_sdk: dcm_ip_builder_sdk.BuildApi, app, run_service,
+    testing_config
+):
+    """Test endpoints `/build-POST` and `/report-GET`."""
+
+    run_service(app)
+
+    submission = build_sdk.build(
+        {
+            "build": {
+                "target": {
+                    "path": str("test-ie")
+                },
+                "mappingPlugin": {
+                    "plugin": "demo",
+                    "args": {}
+                },
+                "validate": False
+            }
+        }
+    )
+
+    while True:
+        try:
+            report = build_sdk.get_report(token=submission.value)
+            break
+        except dcm_ip_builder_sdk.exceptions.ApiException as e:
+            assert e.status == 503
+            sleep(2)
+
+    assert report.data.actual_instance.success
+    assert (
+        testing_config().FS_MOUNT_POINT / report.data.actual_instance.path
+    ).is_dir()
+    assert report.data.actual_instance.origin_system_id is None
+    assert report.data.actual_instance.external_id is None
 
 
 def test_validation_report(

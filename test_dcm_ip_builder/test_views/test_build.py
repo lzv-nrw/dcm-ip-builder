@@ -49,6 +49,35 @@ def test_build_minimal(
     ).is_valid()
     assert json["data"]["valid"]
     assert json["data"]["success"]
+    assert json["data"]["originSystemId"] == "id"
+    assert json["data"]["externalId"] == "0"
+    assert "BagIt-Validation-Plugin" in str(json["log"])
+
+
+def test_build_minimal_no_validation(
+    client, testing_config, minimal_request_body, wait_for_report
+):
+    """
+    Test basic functionality of /build-POST endpoint without validation.
+    """
+
+    # submit job
+    minimal_request_body["build"]["validate"] = False
+    response = client.post(
+        "/build",
+        json=minimal_request_body
+    )
+    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+
+    # wait until job is completed
+    json = wait_for_report(client, response.json["value"])
+
+    assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).is_dir()
+    assert "valid" not in json["data"]
+    assert "originSystemId" not in json["data"]
+    assert "externalId" not in json["data"]
+    assert json["data"]["success"]
+    assert "BagIt-Validation-Plugin" not in str(json["log"])
 
 
 def test_build_failing_get_output_path(

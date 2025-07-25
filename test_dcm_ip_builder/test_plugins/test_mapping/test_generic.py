@@ -9,6 +9,7 @@ from dcm_ip_builder.plugins.mapping import (
     GenericMapper,
     GenericB64Plugin,
     GenericUrlPlugin,
+    GenericStringPlugin,
 )
 
 
@@ -38,6 +39,22 @@ def test_generic_url_minimal(fixtures):
         path="<source-file>",
         mapper={
             "url": f"file://{(fixtures / 'plugins' / 'm.py').resolve()}",
+            "args": {"field-1": "value-1"},
+        },
+    )
+
+    assert result.metadata == {"field-1": "value-1"}
+
+
+def test_generic_string_minimal(fixtures):
+    """Test generic-string-mapping"""
+    result = GenericStringPlugin().get(
+        None,
+        path="<source-file>",
+        mapper={
+            "string": (fixtures / "plugins" / "m.py").read_text(
+                encoding="utf-8"
+            ),
             "args": {"field-1": "value-1"},
         },
     )

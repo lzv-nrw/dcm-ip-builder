@@ -52,18 +52,62 @@ It is based on the general-purpose plugin-system implemented in `dcm-common`.
 
 ### Metadata mapping
 The natively provided metadata mapping-plugins
-* `generic-mapper-plugin-url` and
-* `generic-mapper-plugin-base64`
+* `xslt-plugin`,
+* `generic-mapper-plugin-string`,
+* `generic-mapper-plugin-base64`, and
+* `generic-mapper-plugin-url`
 
 allow to perform metadata mapping based on either
-* a url referencing a python-script file containing a class named `ExternalMapper` that implements the interface `dcm_ip_builder.plugins.mapping.GenericMapper` or
-* a `dill`-serialized and base64-encoded version of that class
+* an xsl-transformation (version 1.0) as string (see [example](#XSLT)),
+* the contents of a python module containing a class named `ExternalMapper` that implements the interface `dcm_ip_builder.plugins.mapping.GenericMapper` as string,
+* a `dill`-serialized and base64-encoded version of that class,  or
+* a url referencing a python-module containing that class
 
 when building IPs.
 
 This way, the mapping process can be freely customized.
 Note that due to the security implications, it is recommended to instead use [external plugins](#additional-plugins) to provide a set of trusted plugins.
-In order to enable these plugins, set the `ALLOW_GENERIC_MAPPING`-variable accordingly.
+
+#### XSLT
+The output document of the `xslt` should be a well-formed xml string whose root element is `metadata`.
+The metadata should be grouped in elements named `field` with the key as attribute and the value as text.
+No nesting is allowed. Any namespace prefixes in the output are ignored.
+
+This is an example implementation of a minimal `xslt` that is compatible with the `xslt-plugin`
+```xml
+<xsl:stylesheet xmlns:oai="http://www.openarchives.org/OAI/2.0/" 
+                xmlns:dc="http://purl.org/dc/elements/1.1/"
+                xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                exclude-result-prefixes="oai oai_dc dc" version="1.0">
+    <xsl:output method="xml" indent="yes" encoding="UTF-8"/>
+    <xsl:template match="/">
+        <metadata>
+            <xsl:apply-templates select="//oai_dc:dc"/>
+            <field>
+                <xsl:attribute name="key">
+                    <xsl:text>Source-Organization</xsl:text>
+                </xsl:attribute>
+                <xsl:text>https://d-nb.info/gnd/0</xsl:text>
+            </field>
+        </metadata>
+    </xsl:template>
+    <xsl:template match="//oai_dc:dc">
+        <xsl:for-each select="//dc:rights">
+            <field>
+                <xsl:attribute name="key">
+                    <xsl:text>DC-Rights</xsl:text>
+                </xsl:attribute>
+                <xsl:value-of select="."/>
+            </field>
+        </xsl:for-each>
+    </xsl:template>
+</xsl:stylesheet>
+```
+It correctly processes dc-rights information from an input source-file and adds the source organization.
+
+#### Python
+In order to enable the `generic`-type plugins, set the `ALLOW_GENERIC_MAPPING`-variable accordingly.
 Also note that by default the `dill`-based (de-)serialization does not serialize dependencies.
 Consequently, potential additional dependencies of `ExternalMapper`s have to be installed manually in the IP Builder's environment before that mapper becomes usable.
 

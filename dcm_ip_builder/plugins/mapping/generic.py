@@ -6,6 +6,7 @@ import base64
 from urllib import request
 import importlib
 import abc
+from hashlib import md5
 
 from dcm_common import LoggingContext as Context
 from dcm_common.plugins import PythonDependency, Signature, Argument, JSONType
@@ -281,5 +282,70 @@ class GenericUrlPlugin(GenericMappingPlugin):
         return (
             False,
             f"cannot find class-spec for 'ExternalMapper' in {src}",
+            None,
+        )
+
+
+class GenericStringPlugin(GenericMappingPlugin):
+    """
+    Metadata mapping-plugin that works based on implementations of the
+    `GenericMapper`-interface provided as string.
+    """
+
+    _TYPE = "string"
+    _NAME = GenericMappingPlugin.name + _TYPE
+    _DESCRIPTION = (
+        "Generic metadata mapping based on implementations of the "
+        + "'GenericMapper'-interface provided as string."
+    )
+    _SIGNATURE = Signature(
+        path=MappingPlugin.signature.properties["path"],
+        mapper=Argument(
+            type_=JSONType.OBJECT,
+            required=True,
+            description="mapper details",
+            properties={
+                _TYPE: Argument(
+                    type_=JSONType.STRING,
+                    required=True,
+                    description=("'GenericMapper'-module string"),
+                ),
+                "args": Argument(
+                    type_=JSONType.OBJECT,
+                    required=True,
+                    description=(
+                        "additional arguments passed to the "
+                        + "'GenericMapper.get_metadata'-method"
+                    ),
+                    additional_properties=True,
+                ),
+            },
+        ),
+    )
+
+    def _load_mapper(self, src: str) -> tuple[bool, str, Any]:
+        """Loads `GenericMapper`-class."""
+        _hash = md5(src.encode("utf-8")).hexdigest()
+
+        # create spec and module, then run code
+        try:
+            # create spec and generate module
+            spec = importlib.util.spec_from_loader(
+                name=f"external_mapper-{_hash}", loader=None, origin=src
+            )
+            module = importlib.util.module_from_spec(spec)
+            # run
+            # pylint: disable-next=exec-used
+            exec(src, module.__dict__)
+        # pylint: disable=broad-exception-caught
+        except Exception as exc_info:
+            return False, f"cannot interpret source: {exc_info}", None
+
+        # search for expected GenericMapper (named ExternalMapper)
+        if hasattr(module, "ExternalMapper"):
+            return True, "", module.ExternalMapper
+        return (
+            False,
+            f"cannot find class-spec for 'ExternalMapper' in mapper '{_hash}'",
             None,
         )

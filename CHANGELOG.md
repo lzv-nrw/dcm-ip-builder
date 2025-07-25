@@ -1,6 +1,29 @@
 # Changelog
 
-## [X.Y.Z] - 2025-02-14
+## [6.0.0] - 2025-07-25
+
+### Changed
+
+- **Breaking:** implemented changes for API v5
+
+### Added
+
+- added validation-plugin for the `significant_properties.xml`
+- added identifiers to `JobData` after successful validation and if available in `bag-info.txt`-metadata
+- added build-request specific validation option
+- added `GenericStringPlugin` and `XSLTMappingPlugin`
+
+### Removed
+
+- dropped support for `AppConfig.DO_VALIDATION`
+
+### Fixed
+
+- fixed initialization of ScalableOrchestrator with ORCHESTRATION_PROCESSES
+- fixed potential deadlocks when using `bagit_profile.Profile.get_profile`
+- fixed not properly cleaning up temporary data while building bag (if a relative mount point is used)
+
+## [5.0.0] - 2025-02-14
 
 ### Changed
 

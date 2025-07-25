@@ -16,6 +16,7 @@ test_BuildConfig_json = get_model_serialization_test(
             (
                 Target(Path(".")),
                 PluginConfig("plugin-name", {}),
+                False,
                 "bagit-url",
                 "payload-url",
             ),

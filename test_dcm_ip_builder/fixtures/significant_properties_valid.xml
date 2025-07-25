@@ -1,0 +1,39 @@
+<premis:premis xmlns:premis="http://www.loc.gov/premis/v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.loc.gov/premis/v3 https://www.loc.gov/standards/premis/premis.xsd" version="3.0">
+	<premis:object xsi:type="premis:intellectualEntity">
+		<!-- Identifier points to the bag's payload directory that contains all representation subdirectories of the IE -->
+		<premis:objectIdentifier>
+			<premis:objectIdentifierType>Relative path</premis:objectIdentifierType>
+			<premis:objectIdentifierValue>../data/</premis:objectIdentifierValue>
+		</premis:objectIdentifier>
+		<!-- Significant property: CONTENT -->
+		<premis:significantProperties>
+			<premis:significantPropertiesType>content</premis:significantPropertiesType>
+			<premis:significantPropertiesValue>The full text content must remain unchanged and machine-readable.</premis:significantPropertiesValue>
+		</premis:significantProperties>
+		<!-- Significant property: CONTEXT -->
+		<premis:significantProperties>
+			<premis:significantPropertiesType>context</premis:significantPropertiesType>
+			<premis:significantPropertiesValue>Metadata about the creation date and original author must be preserved.</premis:significantPropertiesValue>
+		</premis:significantProperties>
+		<!-- Significant property: APPEARANCE -->
+		<premis:significantProperties>
+			<premis:significantPropertiesType>appearance</premis:significantPropertiesType>
+			<premis:significantPropertiesValue>Original layout, including headings and paragraph breaks, must be preserved for human readability.</premis:significantPropertiesValue>
+		</premis:significantProperties>
+		<!-- Significant property: BEHAVIOR -->
+		<premis:significantProperties>
+			<premis:significantPropertiesType>behavior</premis:significantPropertiesType>
+			<premis:significantPropertiesValue>Hyperlinks embedded in the document must remain functional and allow navigation to linked resources.</premis:significantPropertiesValue>
+		</premis:significantProperties>
+		<!-- Significant property: STRUCTURE -->
+		<premis:significantProperties>
+			<premis:significantPropertiesType>structure</premis:significantPropertiesType>
+			<premis:significantPropertiesValue>The section hierarchy and internal document organization must be maintained.</premis:significantPropertiesValue>
+		</premis:significantProperties>
+		<!-- Significant property: UNKNOWN PROPERTY -->
+		<premis:significantProperties>
+			<premis:significantPropertiesType>butterfly</premis:significantPropertiesType>
+			<premis:significantPropertiesValue>The butterfly must be maintained.</premis:significantPropertiesValue>
+		</premis:significantProperties>
+	</premis:object>
+</premis:premis>

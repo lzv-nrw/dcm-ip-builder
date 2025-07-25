@@ -15,11 +15,6 @@ def _bag_path(file_storage):
     return file_storage / "test-bag"
 
 
-@pytest.fixture(scope="session", name="bad_bag_path")
-def _bad_bag_path(file_storage):
-    return file_storage / "test-bag_bad"
-
-
 @pytest.fixture(name="profile_identifier")
 def _profile_identifier(testing_config):
     return testing_config.BAGIT_PROFILE_URL
@@ -89,8 +84,9 @@ def test_get(
     for f in external_functions:
         patchers.append(
             mock.patch(
-                "bagit_profile.Profile." + f,
-                side_effect=lambda *args, **kwargs: expected_valid
+                "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile."
+                + f,
+                side_effect=lambda *args, **kwargs: expected_valid,
             )
         )
 
@@ -146,7 +142,7 @@ def test_bagit_profile_report(
         )
         return False
     patcher_validation = mock.patch(
-        "bagit_profile.Profile.validate",
+        "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.validate",
         side_effect=fake_validate
     )
 
@@ -197,11 +193,11 @@ def test_validate_bag_info(profile_identifier, bagit_profile_dict, bag_path):
 
     # fake validate
     patcher_validate_bag_info = mock.patch(
-        "bagit_profile.Profile.validate_bag_info",
+        "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.validate_bag_info",
         side_effect=lambda *args, **kwargs: True
     )
     patcher_validate = mock.patch(
-        "bagit_profile.Profile.validate",
+        "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.validate",
         side_effect=lambda *args, **kwargs: True
     )
     # fake Path.is_file()
@@ -353,7 +349,7 @@ def test_get_request_profile(
         user_profile = deepcopy(bagit_profile_dict)
         user_profile["Manifests-Required"] = ["md5"]
         patcher_get_profile = mock.patch(
-            "bagit_profile.Profile.get_profile",
+            "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.get_profile",
             side_effect=lambda *args, **kwargs: user_profile
         )
         patcher_get_profile.start()

@@ -4,31 +4,24 @@ BuildResult data-model definition
 
 from typing import Optional
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from dcm_common.models import DataModel
-from dcm_common.plugins import PluginResult
+
+from .validation_result import ValidationResult
 
 
 @dataclass
-class BuildResult(DataModel):
+class BuildResult(ValidationResult):
     """
     Build result `DataModel`
 
     Keyword arguments:
-    build -- property to differentiate the job results.
-             Only uses default value to allow model validation in the sdk.
-    success -- overall success of build process
+    <all args from ValidationResult-model>
     path -- path to output directory relative to shared file system
-    valid -- overall validity; true if IP is valid
-    details -- detailed results by plugin
     """
 
-    build_plugin: str = field(default_factory=lambda: "build_plugin")
-    success: Optional[bool] = None
     path: Optional[Path] = None
-    valid: Optional[bool] = None
-    details: dict[str, PluginResult] = field(default_factory=dict)
 
     @DataModel.serialization_handler("path")
     @classmethod
@@ -45,3 +38,14 @@ class BuildResult(DataModel):
         if value is None:
             DataModel.skip()
         return Path(value)
+
+    @DataModel.serialization_handler("_request_type", "requestType")
+    @classmethod
+    def _request_type_serialization_handler(cls, _):
+        """
+        Performs `_request_type`-serialization.
+
+        Always generate the constant value for this JobData-type.
+        (See base model ValidationResult for details)
+        """
+        return "build"

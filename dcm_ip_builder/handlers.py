@@ -3,7 +3,7 @@
 from typing import Mapping
 from pathlib import Path
 
-from data_plumber_http import Property, Object, Url
+from data_plumber_http import Property, Object, Url, Boolean
 from dcm_common.services.handlers import TargetPath, PluginType
 
 from dcm_ip_builder.models import Target, BuildConfig, ValidationConfig
@@ -11,8 +11,7 @@ from dcm_ip_builder.plugins.mapping import MappingPlugin
 
 
 def get_build_handler(
-    acceptable_plugins: Mapping[str, MappingPlugin],
-    cwd: Path
+    acceptable_plugins: Mapping[str, MappingPlugin], cwd: Path
 ):
     """
     Returns parameterized handler (based on acceptable_plugins and cwd
@@ -26,12 +25,11 @@ def get_build_handler(
                     Property("target", required=True): Object(
                         model=Target,
                         properties={
-                            Property("path", required=True):
-                                TargetPath(
-                                    _relative_to=cwd, cwd=cwd, is_dir=True
-                                )
+                            Property("path", required=True): TargetPath(
+                                _relative_to=cwd, cwd=cwd, is_dir=True
+                            )
                         },
-                        accept_only=["path"]
+                        accept_only=["path"],
                     ),
                     Property(
                         "mappingPlugin", name="mapping_plugin", required=True
@@ -39,6 +37,7 @@ def get_build_handler(
                         acceptable_plugins,
                         acceptable_context=["mapping"],
                     ),
+                    Property("validate", default=True): Boolean(),
                     Property(
                         "BagItProfile",
                         name="bagit_profile_url",
@@ -47,20 +46,24 @@ def get_build_handler(
                     ): Url(),
                     Property(
                         "BagItPayloadProfile",
-                        name="payload_profile_url"
+                        name="payload_profile_url",
                         # default for build is set in view function,
                         # default for validation is set in plugin instantiation
                     ): Url(),
                 },
                 accept_only=[
-                    "target", "mappingPlugin", "BagItProfile",
+                    "target",
+                    "mappingPlugin",
+                    "validate",
+                    "BagItProfile",
                     "BagItPayloadProfile",
-                ]
+                ],
             ),
-            Property("callbackUrl", name="callback_url"):
-                Url(schemes=["http", "https"])
+            Property("callbackUrl", name="callback_url"): Url(
+                schemes=["http", "https"]
+            ),
         },
-        accept_only=["build", "callbackUrl"]
+        accept_only=["build", "callbackUrl"],
     ).assemble()
 
 
@@ -76,28 +79,28 @@ def get_validate_ip_handler(cwd: Path):
                     Property("target", required=True): Object(
                         model=Target,
                         properties={
-                            Property("path", required=True):
-                                TargetPath(
-                                    _relative_to=cwd, cwd=cwd, is_dir=True
-                                )
+                            Property("path", required=True): TargetPath(
+                                _relative_to=cwd, cwd=cwd, is_dir=True
+                            )
                         },
-                        accept_only=["path"]
+                        accept_only=["path"],
                     ),
                     Property(
                         "BagItProfile",
-                        name="bagit_profile_url"
+                        name="bagit_profile_url",
                         # default is set in plugin instantiation
                     ): Url(),
                     Property(
                         "BagItPayloadProfile",
-                        name="payload_profile_url"
+                        name="payload_profile_url",
                         # default is set in plugin instantiation
                     ): Url(),
                 },
                 accept_only=["target", "BagItProfile", "BagItPayloadProfile"],
             ),
-            Property("callbackUrl", name="callback_url"):
-                Url(schemes=["http", "https"])
+            Property("callbackUrl", name="callback_url"): Url(
+                schemes=["http", "https"]
+            ),
         },
-        accept_only=["validation", "callbackUrl"]
+        accept_only=["validation", "callbackUrl"],
     ).assemble()
