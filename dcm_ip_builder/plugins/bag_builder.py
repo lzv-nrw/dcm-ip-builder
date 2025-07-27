@@ -4,13 +4,13 @@ based on the bagit library, that can be used by the 'IP Builder'-app
 to build IPs from IEs.
 """
 
-from typing import Optional
+from typing import Optional, Mapping, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from shutil import copytree, rmtree, move
+from shutil import rmtree, move
 from tempfile import TemporaryDirectory
 
-import bagit
+import bagit_utils
 from dcm_common.plugins import (
     Signature,
     PluginResult,
@@ -21,8 +21,33 @@ from dcm_common.plugins import (
     PluginExecutionContext
 )
 from dcm_common.logger import LoggingContext as Context
-from dcm_common.util import now, list_directory_content
+from dcm_common.util import list_directory_content
 from dcm_common.models import DataModel
+
+
+class Bag(bagit_utils.Bag):
+    @classmethod
+    def build_from(
+        cls,
+        src: Path,
+        dst: Path,
+        baginfo: Mapping[str, list[str]],
+        algorithms: Optional[Iterable[str]] = None,
+        create_symlinks: bool = False,
+        validate: bool = True,
+    ) -> bagit_utils.Bag:
+        # map baginfo-values to lists where needed
+        return bagit_utils.Bag.build_from(
+            src,
+            dst,
+            {
+                k: (v if isinstance(v, list) else [v])
+                for k, v in baginfo.items()
+            },
+            algorithms,
+            create_symlinks,
+            validate,
+        )
 
 
 @dataclass
@@ -113,14 +138,6 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
             description="if `False` and `dest` is not `None` and already "
             + "exists, a `FileExistsError` is raised",
             example=True
-        ),
-        encoding=Argument(
-            type_=JSONType.STRING,
-            required=False,
-            default="utf-8",
-            description="encoding for writing and reading manifest files "
-            + "(see bagit library)",
-            example="utf-8"
         )
     )
     _RESULT_TYPE = BagItPluginResult
@@ -160,90 +177,6 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
             return False, "'src' has to be a directory"
         return super()._validate_more(kwargs)
 
-    def _call_bagit(
-        self,
-        context: BagItPluginContext,
-        src: Path,
-        encoding: str,
-        bag_info: Optional[dict[str, str | list[str]]] = None,
-    ) -> Optional[bagit.Bag]:
-        """
-        Make a bag from a directory.
-
-        On success it returns a bagit.Bag-instance.
-        If the basic bag validation fails, it returns None.
-
-        This internal method uses the make_bag method from the bagit library.
-
-        Keyword arguments:
-        src -- path to an IE (containing "data" and optionally "meta")
-        encoding -- encoding for writing and reading manifest files
-                    (see bagit library)
-        bag_info -- selected subset of metadata to be added to the
-                    bag-info.txt; input is a dictionary with either strings
-                    or lists of strings in its values
-                    (default None)
-        """
-
-        context.set_progress(f"calling bagit on directory '{src}'")
-        context.push()
-
-        # Make the bag
-        data_dir = src / "data"
-        meta_dir = src / "meta"
-        bag = bagit.make_bag(
-            # bag_dir cannot be a Path object, due to the bagit library.
-            bag_dir=str(data_dir),
-            bag_info=bag_info,
-            processes=1,
-            checksums=self._checksums,
-            checksum=None,
-            encoding=encoding
-        )
-
-        # Override the file bagit.txt to set the BagIt-Version
-        # This approach imitates the original creation of the file
-        # in the bagit library
-        # https://github.com/LibraryOfCongress/bagit-python/blob/ed81c2384955747e8ba9dcb9661df1ac1fd31222/bagit.py#L246
-        bagit_file_path = Path(data_dir) / "bagit.txt"
-        Path(bagit_file_path).write_text(
-            (
-                f"BagIt-Version: {self.info['bagit_version']}\n"
-                f"Tag-File-Character-Encoding: {encoding.upper()}\n"
-            ),
-            encoding=encoding
-        )
-        # bag.version_info will be updated
-        # after opening the Bag with bagit.Bag()
-        # https://github.com/LibraryOfCongress/bagit-python/blob/ed81c2384955747e8ba9dcb9661df1ac1fd31222/bagit.py#L350C37-L350C37
-
-        # Update the bag info
-        # from bagit library: You can change the metadata
-        # persisted to the bag-info.txt by using the info property on a Bag.
-        bag = bagit.Bag(str(data_dir))
-        # Generate the field Bagging-DateTime
-        bag.info["Bagging-DateTime"] = now().astimezone().isoformat()
-        # Delete the field Bagging-Date
-        if "Bagging-Date" in bag.info:
-            del bag.info["Bagging-Date"]
-        # Save the bag without regenerating manifests
-        bag.save(processes=1, manifests=False)
-
-        if meta_dir.is_dir():
-            # Add the metadata folder into the bag
-            copytree(src=meta_dir, dst=data_dir / "meta")
-            rmtree(meta_dir)
-            # Save the bag and regenerate manifests
-            # The save method from the bagit library recalculates
-            # the Payload-Oxum (from the bag payload, i.e. all files/folders
-            # in the data folder) and regenerates the manifest files
-            # when manifests=True (in this step it is expected that the files
-            # from the meta folder are added - which do NOT belong
-            # in the bag payload).
-            bag.save(processes=1, manifests=True)
-
-        return bag
-
     def _validate_ie(self, src: Path) -> tuple[bool, str]:
         """Validate src-directory structure/contents."""
         if not (src / "data").is_dir():
@@ -272,7 +205,6 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
         src: str,
         bag_info: dict[str, str | list[str]],
         exist_ok: bool,
-        encoding: str,
         dest: Optional[str] = None
     ) -> None:
         """
@@ -301,8 +233,6 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
                     or lists of strings in its values
         exist_ok -- if `False` and `dest` is not `None` and already
                     exists, a `FileExistsError` is raised
-        encoding -- encoding for writing and reading manifest files
-                    (see bagit library)
         dest -- destination directory for the bag
                 (default None; corresponds to building bag in-place)
         """
@@ -312,9 +242,12 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
             Context.INFO,
             body=f"Making bag from '{str(src)}'."
         )
+        context.push()
 
-        # Convert src into path.
+        # Convert src/dest into paths.
         src = Path(src)
+        if dest is not None:
+            dest = Path(dest)
 
         # Validate the expected structure in src
         valid_ie, msg = self._validate_ie(src)
@@ -323,97 +256,92 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
                 Context.ERROR,
                 body=msg
             )
+            context.push()
             return
 
         # check whether output is valid
         if dest is not None:
-            Path(dest).mkdir(exist_ok=exist_ok)
+            dest.mkdir(parents=True, exist_ok=exist_ok)
+
         # use temporary output as work-directory
         # tmp_dir is deleted when context manager is exited
         # use TMPDIR to explicitly set tmp-directory; see also
         # https://docs.python.org/3/library/tempfile.html#tempfile.mkstemp
         with TemporaryDirectory() as tmp_dir:
             _dest = Path(tmp_dir)
-            copytree(
-                src, _dest, dirs_exist_ok=True
-            )  # bagit works on copy of ie
 
-            # Create the bag
-            bag = self._call_bagit(
-                context=context,
-                src=_dest,
-                bag_info=bag_info,
-                encoding=encoding,
-            )
+            # build bag (without manifests since this method does not
+            # support to have a separate set of algorithms for manifests
+            # and tag-manifests)
+            try:
+                bag = Bag.build_from(
+                    src=src,
+                    dst=_dest,
+                    baginfo=bag_info
+                    | {
+                        "Bagging-DateTime": [
+                            Bag.get_bagging_datetime()
+                        ],
+                        "Payload-Oxum": [
+                            Bag.get_payload_oxum(src / "data")
+                        ],
+                    },
+                    algorithms=[],
+                    validate=False,
+                )
+            except bagit_utils.BagItError as exc_info:
+                context.result.log.log(
+                    Context.ERROR, body=str(exc_info)
+                )
+                context.push()
+                rmtree(_dest)
+                return
+
+            # generate manifests
+            bag.set_manifests(self.manifests)
+            bag.set_tag_manifests(self.tagmanifests)
 
             # move result to dest
             if dest is None:
                 rmtree(src)
-                bag_path = src
+                bag.path = src
             else:
                 rmtree(dest)
-                bag_path = dest
+                bag.path = dest
 
             # using pathlib's 'rename' method (that uses os.rename)
             # does not support cross-filesystem/cross-device renaming, which
             # leads to an invalid cross-device link, when running in docker
-            move(_dest / "data", bag_path)
+            move(_dest, bag.path)
 
-        bag = bagit.Bag(str(bag_path))
-
-        # Delete the manifest files that were not required
-        for excessive_alg in set(self._checksums) - set(self.manifests):
-            mfile = bag_path / Path("manifest-" + excessive_alg + ".txt")
-            mfile.unlink()
-        # Generate new tag-manifest files,
-        # without generating new manifest files (-> manifests=False).
-        bag.save(processes=1, manifests=False)
-        # Delete the tag-manifest files that were not required
-        for excessive_alg in set(self._checksums) - set(self.tagmanifests):
-            tag_mfile = bag_path / Path(
-                "tagmanifest-" + excessive_alg + ".txt"
-            )
-            tag_mfile.unlink()
-
-        # if 'data' dir does not contain any file, create empty manifest files
-        # (which are not generated by the bagit library in that case)
-        if (
-            len(list_directory_content(
-                (Path(bag.path) / "data"),
-                pattern="**/*",
-                condition_function=lambda p: p.is_file(),
-            )) == 0
-        ):
+        # run validation of bag-format
+        report = bag.validate_format()
+        for issue in report.issues:
+            match issue.level:
+                case "error":
+                    issue_context = Context.ERROR
+                case "warning":
+                    issue_context = Context.WARNING
+                case _:
+                    issue_context = Context.INFO
             context.result.log.log(
-                Context.WARNING,
-                body=(
-                    "IE contains no payload files. "
-                    + "Generating empty manifest files."
-                )
+                issue_context, body=issue.message
             )
-            for algorithm in self._checksums:
-                (Path(bag.path) / f"manifest-{algorithm}.txt").touch()
 
-        # Perform the basic validation routine from the bagit library
-        # and log any error
-        try:
-            bag.validate(fast=False, completeness_only=False)
-        except bagit.BagError as exc_info:
+        if report.valid:
             context.result.log.log(
-                Context.ERROR,
-                body=(
-                    "Bag validation failed (bagit.Bag.validate "
-                    + f"raised an error: {exc_info})."
-                )
+                Context.INFO, body=f"Successfully created bag at '{bag.path}'."
             )
-            return
+            context.set_progress("success")
+        else:
+            context.result.log.log(
+                Context.INFO,
+                body=f"Bag creation resulted in invalid bag at '{bag.path}'.",
+            )
+            context.set_progress("failure")
 
-        # success
-        context.result.log.log(Context.INFO, body="Successfully created bag.")
-
-        context.result.path = bag_path
-        context.result.success = True
-        context.set_progress("success")
+        context.result.path = bag.path
+        context.result.success = report.valid
         context.push()
 
     def _get(
