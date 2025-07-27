@@ -4,6 +4,7 @@ from typing import TypedDict, Optional
 import re
 from pathlib import Path
 
+import bagit_utils
 from dcm_common.logger import LoggingContext as Context
 from dcm_common.util import (
     NestedDict,
@@ -18,20 +19,8 @@ from .interface import (
 )
 
 
-def load_baginfo(path) -> dict[str, str | list[str]]:
-    result = {}
-    if Path(path).is_file():
-        for line in Path(path).read_text(encoding="utf-8").split("\n"):
-            if ":" not in line:
-                continue
-            field = tuple(
-                map(lambda s: s.strip(), line.split(":", maxsplit=1))
-            )
-            if field[0] in result:
-                result[field[0]] = [result[field[0]]]
-            else:
-                result[field[0]] = field[1]
-    return result
+def load_baginfo(path) -> dict[str, list[str]]:
+    return bagit_utils.Bag(path, load=False).baginfo
 
 
 # define types for typehinting of typed dictionaries
