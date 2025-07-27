@@ -208,7 +208,6 @@ pytest -v -s
 ## Environment/Configuration
 Service-specific environment variables are
 * `BAGIT_PROFILE_URL` [DEFAULT "./dcm_ip_builder/static/bagit_profile.json"]: url to bagit profile in JSON-format
-* `BAGINFO_TAG_CASE_SENSITIVE` [DEFAULT 1] whether to use case sensitive tags in bagit profile
 * `PAYLOAD_PROFILE_URL` [DEFAULT "./dcm_ip_builder/static/payload_profile.json"]: url to bagit payload profile in JSON-format
 * `MANIFESTS` [DEFAULT '["sha256", "sha512"]']: list with the algorithms to be used for the manifest files when building an IP;
 possible values: "md5", "sha1", "sha256" and "sha512"

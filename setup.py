@@ -12,8 +12,6 @@ setup(
         "flask==3.*",
         "PyYAML==6.*",
         "bagit-utils>=1.1.1,<2.0.0",
-        "bagit>=1.7.0,<2.0.0",
-        "bagit_profile>=1.3.1,<2.0.0",
         "lxml==5.*",
         "data-plumber-http>=1.0.0,<2",
         "dcm-common[services, orchestra, xml]>=4.0.0,<5",
