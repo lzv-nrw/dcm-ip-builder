@@ -11,6 +11,7 @@ setup(
     install_requires=[
         "flask==3.*",
         "PyYAML==6.*",
+        "bagit-utils>=1.1.1,<2.0.0",
         "bagit>=1.7.0,<2.0.0",
         "bagit_profile>=1.3.1,<2.0.0",
         "lxml==5.*",
