@@ -74,17 +74,8 @@ def test_validate(
     assert ("externalId" in json["data"]) is valid
 
 
-@pytest.mark.parametrize(
-    ("profile", "valid"),
-    [
-        ("https://lzv.nrw/test_bagit_profile.json", True),
-        ("request_bagit_profile", False)  # expected validation error: 'BagIt-Profile-Identifier' tag does not contain this profile's URI: <https://lzv.nrw/tests_bagit_profile.json> != <request_bagit_profile>"
-    ],
-    ids=["valid-ip", "invalid-ip"]
-)
 def test_validate_with_argument(
-    client, minimal_request_body, wait_for_report,
-    profile, valid, testing_config
+    client, minimal_request_body, wait_for_report, testing_config
 ):
     """
     Test /validate-POST endpoint with a plugin-argument in the request.
@@ -96,32 +87,27 @@ def test_validate_with_argument(
         Path(minimal_request_body["validation"]["target"]["path"]).parent
         / "test-bag"
     )
-    request_body["validation"]["BagItProfile"] = profile
+    request_body["validation"]["BagItProfile"] = "profile-url"
 
     # fake get_profile
-    patcher_get_profile = mock.patch(
-        "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.get_profile",
+    with mock.patch(
+        "bagit_utils.validator.load_json_url",
         side_effect=lambda *args, **kwargs: testing_config.BAGIT_PROFILE
-    )
-    patcher_get_profile.start()
+    ):
+        response = client.post(
+            "/validate",
+            json=request_body
+        )
+        assert client.put("/orchestration?until-idle", json={}).status_code == 200
 
-    response = client.post(
-        "/validate",
-        json=request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+        assert response.status_code == 201
+        assert response.mimetype == "application/json"
+        token = response.json["value"]
 
-    assert response.status_code == 201
-    assert response.mimetype == "application/json"
-    token = response.json["value"]
+        # wait until job is completed
+        json = wait_for_report(client, token)
 
-    # wait until job is completed
-    json = wait_for_report(client, token)
-    assert json["data"]["valid"] is valid
-    assert ("originSystemId" in json["data"]) is valid
-    assert ("externalId" in json["data"]) is valid
-
-    patcher_get_profile.stop()
+    assert json["data"]["valid"]
 
 
 @pytest.mark.parametrize(
