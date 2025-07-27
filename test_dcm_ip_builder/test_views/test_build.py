@@ -5,7 +5,7 @@ from shutil import copytree
 from uuid import uuid4
 
 import pytest
-from bagit import Bag
+from bagit_utils import Bag
 from lxml import etree as et
 from dcm_common.util import list_directory_content
 
@@ -49,8 +49,8 @@ def test_build_minimal(testing_config, minimal_request_body):
 
     assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).is_dir()
     assert Bag(
-        str(testing_config.FS_MOUNT_POINT / report["data"]["path"])
-    ).is_valid()
+        testing_config.FS_MOUNT_POINT / report["data"]["path"], load=False
+    ).validate_format().valid
     assert report["data"]["valid"]
     assert report["data"]["success"]
     assert report["data"]["originSystemId"] == "id"

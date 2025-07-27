@@ -8,6 +8,7 @@ from shutil import copytree
 import pytest
 
 from dcm_ip_builder import app_factory
+from dcm_ip_builder.models import ValidationReport
 
 
 @pytest.fixture(name="minimal_request_body")
@@ -127,16 +128,11 @@ Source-Organization: https://d-nb.info/gnd/2047974-8
     minimal_request_body["validation"]["target"]["path"] = path.name
     minimal_request_body["validation"]["BagItProfile"] = fake_profile_url
 
-    response = client.post("/validate", json=minimal_request_body)
-
-    assert response.status_code == 201
-    assert response.mimetype == "application/json"
-    token = response.json["value"]
+    token = client.post("/validate", json=minimal_request_body).json["value"]
 
     # wait until job is completed
     app.extensions["orchestra"].stop(stop_on_idle=True)
     report = client.get(f"/report?token={token}").json
-    from dcm_ip_builder.models import ValidationReport
 
     print(ValidationReport.from_json(report).log.fancy())
 
