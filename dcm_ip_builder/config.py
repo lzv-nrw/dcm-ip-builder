@@ -70,9 +70,6 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
         / "static"
         / "bagit_profile.json"
     )
-    BAGINFO_TAG_CASE_SENSITIVE = (
-        (int(os.environ.get("BAGINFO_TAG_CASE_SENSITIVE") or 1)) == 1
-    )
     # payload profile
     PAYLOAD_PROFILE_URL = (
         os.environ.get("PAYLOAD_PROFILE_URL")
@@ -172,7 +169,6 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
             BagItProfilePlugin.name: BagItProfilePlugin(
                 default_profile_url=self.BAGIT_PROFILE_URL,
                 default_profile=self.BAGIT_PROFILE,
-                baginfo_tag_case_sensitive=self.BAGINFO_TAG_CASE_SENSITIVE
             ),
             PayloadStructurePlugin.name: PayloadStructurePlugin(
                 default_profile_url=self.PAYLOAD_PROFILE_URL,
