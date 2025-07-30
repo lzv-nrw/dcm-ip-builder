@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.1.0] - 2025-07-30
+
+### Changed
+
+- adapted the payload-structure validation-plugin to mark any IP without payload as invalid
+- added support for building an IP from an IE without payload
+
 ## [6.0.0] - 2025-07-25
 
 ### Changed

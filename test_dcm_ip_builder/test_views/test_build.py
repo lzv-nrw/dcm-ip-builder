@@ -1,6 +1,8 @@
 """Test-module for build-endpoint."""
 
 from pathlib import Path
+from shutil import copytree
+from uuid import uuid4
 from unittest import mock
 
 import pytest
@@ -22,6 +24,14 @@ def _minimal_request_body():
             }
         }
     }
+
+
+@pytest.fixture(name="duplicate_ie")
+def _duplicate_ie(file_storage, testing_config):
+    """Duplicates "test-ie" to another directory."""
+    duplicate = testing_config.FS_MOUNT_POINT / str(uuid4())
+    copytree(file_storage / "test-ie", duplicate)
+    return duplicate
 
 
 def test_build_minimal(
@@ -252,3 +262,72 @@ def test_build_handlers(
         assert response.mimetype == "application/json"
     else:
         assert response.mimetype == "text/plain"
+
+
+@pytest.mark.parametrize(
+    ("validate_flag"),
+    [
+        (False),
+        (True)
+    ],
+    ids=["validate_False", "validate_True"]
+)
+def test_build_no_payload(
+    client,
+    minimal_request_body,
+    wait_for_report,
+    duplicate_ie,
+    testing_config,
+    validate_flag,
+):
+    """Test /build-POST for an IE without payload."""
+
+    # Remove payload
+    for payload_file in list_directory_content(
+        duplicate_ie / "data",
+        pattern="**/*",
+        condition_function=lambda p: p.is_file()
+    ):
+        payload_file.unlink()
+
+    # submit job
+    minimal_request_body["build"]["target"]["path"] = str(
+        Path(minimal_request_body["build"]["target"]["path"]).parent
+        / duplicate_ie.name
+    )
+    minimal_request_body["build"]["validate"] = validate_flag
+
+    response = client.post(
+        "/build",
+        json=minimal_request_body
+    )
+    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+
+    assert response.status_code == 201
+    token = response.json["value"]
+
+    # wait until job is completed
+    json = wait_for_report(client, token)
+
+    # success depends on whether validation is performed
+    assert json["data"]["success"] == (not validate_flag)
+    # output exists and is a valid 'bagit.Bag'
+    assert "path" in json["data"]
+    assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).exists()
+    assert Bag(
+        str(testing_config.FS_MOUNT_POINT / json["data"]["path"])
+    ).is_valid()
+
+    # a warning is included in the log from the bag-builder
+    assert len(json["log"]["WARNING"]) >= 1
+    assert any(
+        "IE contains no payload files. Generating empty manifest files."
+        in m["body"]
+        for m in json["log"]["WARNING"]
+    )
+
+    if validate_flag:
+        assert json["data"]["valid"] is False
+        assert json["data"]["details"]["bagit-profile"]["valid"]
+        assert json["data"]["details"]["significant-properties"]["valid"]
+        assert json["data"]["details"]["payload-structure"]["valid"] is False

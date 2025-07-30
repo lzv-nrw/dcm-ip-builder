@@ -254,24 +254,32 @@ class PayloadStructurePlugin(ValidationPlugin):
         profile -- profile against which to validate directory
         """
 
+        # list all payload files
+        payload_files = list_directory_content(
+            path / "data",
+            pattern="**/*",
+            condition_function=lambda p: p.is_file()
+        )
+
+        # An IP without any payload file is invalid
+        if len(payload_files) == 0:
+            return False, ["The payload directory contains no file."]
+
         payload_files_validate = True
         errors = []
-
         # Payload-directory structure is optional for now
         if "Payload-Folders-Allowed" in profile:
             # list all files in payload that are allowed
-            disallowed_payload_files = list_directory_content(
-                path / "data",
-                pattern="**/*",
-                condition_function=lambda p: (
-                    p.is_file()
-                    and not self.match_any_regex(
-                        str(p.relative_to(path / "data")),
-                        self._get_allowed_folders(profile),
-                        use_as_regex_anyway=True,
-                    )
-                ),
-            )
+            disallowed_payload_files = [
+                f
+                for f in payload_files
+                if not self.match_any_regex(
+                    str(f.relative_to(path / "data")),
+                    self._get_allowed_folders(profile),
+                    use_as_regex_anyway=True,
+                )
+            ]
+
             # invalid if list is non-empty, list bad files in log
             if disallowed_payload_files:
                 payload_files_validate = False

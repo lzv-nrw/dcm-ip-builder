@@ -209,10 +209,7 @@ class BuildView(services.OrchestratedView):
             dest=str(report.data.path),
             exist_ok=True
         )
-        # Copy all error messages in the main log
-        report.log.merge(
-            report.data.details["build"].log.pick(Context.ERROR)
-        )
+        report.log.merge(report.data.details["build"].log)
         push()
 
         # exit if building failed

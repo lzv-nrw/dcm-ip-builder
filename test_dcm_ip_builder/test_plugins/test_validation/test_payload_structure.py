@@ -1,6 +1,7 @@
 """Test module for the `PayloadStructurePlugin`."""
 
-import shutil
+from shutil import rmtree, copytree
+from uuid import uuid4
 from copy import deepcopy
 import re
 from unittest import mock
@@ -30,6 +31,14 @@ def pattern_in_list_of_strings(
 @pytest.fixture(scope="session", name="bag_path")
 def _bag_path(file_storage):
     return file_storage / "test-bag-structure"
+
+
+@pytest.fixture(name="duplicate_bag")
+def _duplicate_bag(bag_path, testing_config):
+    """Duplicates "bag_path" to another directory."""
+    duplicate = testing_config.FS_MOUNT_POINT / str(uuid4())
+    copytree(bag_path, duplicate)
+    return duplicate
 
 
 @pytest.fixture(name="minimal_profile_url")
@@ -68,7 +77,7 @@ def run_around_tests(minimal_profile, bag_path):
     # Run before each test starts
     # Generate the example bag in fixtures to (cleaned) working dir.
     if bag_path.is_dir():
-        shutil.rmtree(bag_path)
+        rmtree(bag_path)
 
     # generate basic test-bag directory structure
     bag_data = bag_path / "data"
@@ -89,7 +98,7 @@ def run_around_tests(minimal_profile, bag_path):
     # Run after each test ends
     # Delete folders
     if bag_path.is_dir():
-        shutil.rmtree(bag_path)
+        rmtree(bag_path)
 
 
 def test_valid_bag(payload_structure_validator, bag_path):
@@ -311,3 +320,43 @@ def test_get_request_profile(
 
     assert result.success
     assert result.valid == expected_valid
+
+
+@pytest.mark.parametrize(
+    ("keep_file"),
+    ([
+        (False),
+        (True),
+    ]),
+    ids=[
+        "without_keep_file",
+        "with_keep_file",
+    ]
+)
+def test_bag_no_payload(
+    payload_structure_validator, duplicate_bag, minimal_profile, keep_file
+):
+    """
+    Test bag without any payload files.
+    Add an empty .keep file to mark as valid.
+    """
+
+    # remove payload from bag
+    for payload_file in list_directory_content(
+        duplicate_bag / "data",
+        pattern="**/*",
+        condition_function=lambda p: p.is_file()
+    ):
+        payload_file.unlink()
+
+    if keep_file:
+        # add an empty .keep file in an allowed location
+        (
+            duplicate_bag
+            / f"data/{minimal_profile['Payload-Folders-Required'][0]}/.keep"
+        ).touch()
+
+    result = payload_structure_validator.get(None, path=str(duplicate_bag))
+
+    assert result.success
+    assert result.valid == keep_file  # valid if the .keep file exists
