@@ -6,7 +6,7 @@ from uuid import uuid4
 from unittest import mock
 
 import pytest
-from bagit import Bag
+from bagit_utils import Bag
 from lxml import etree as et
 from dcm_common.util import list_directory_content
 
@@ -55,8 +55,8 @@ def test_build_minimal(
 
     assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).is_dir()
     assert Bag(
-        str(testing_config.FS_MOUNT_POINT / json["data"]["path"])
-    ).is_valid()
+        testing_config.FS_MOUNT_POINT / json["data"]["path"], load=False
+    ).validate_format().valid
     assert json["data"]["valid"]
     assert json["data"]["success"]
     assert json["data"]["originSystemId"] == "id"
