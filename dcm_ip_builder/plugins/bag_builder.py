@@ -97,8 +97,8 @@ class BagItBagBuilder(PluginInterface, FSPlugin):
     [1] https://github.com/LibraryOfCongress/bagit-python
     """
 
-    _NAME = "bagit_bag_builder"
-    _DISPLAY_NAME = "BagIt Bag Builder"
+    _NAME = "bagit-bag-builder"
+    _DISPLAY_NAME = "BagIt-Bag-Builder-Plugin"
     _DESCRIPTION = "Build Bags from IEs using the bagit library"
     _CONTEXT = "build"
     _DEPENDENCIES = [
