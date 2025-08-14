@@ -21,6 +21,18 @@ def _file_storage():
     return Path("test_dcm_ip_builder/file_storage")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def disable_extension_logging():
+    """
+    Disables the stderr-logging via the helper method `print_status`
+    of the `dcm_common.services.extensions`-subpackage.
+    """
+    # pylint: disable=import-outside-toplevel
+    from dcm_common.services.extensions.common import PrintStatusSettings
+
+    PrintStatusSettings.silent = True
+
+
 @pytest.fixture(name="testing_config")
 def _testing_config(file_storage):
     """Returns test-config"""
@@ -90,4 +102,4 @@ def _client(testing_config):
     Returns test_client.
     """
 
-    return app_factory(testing_config()).test_client()
+    return app_factory(testing_config(), block=True).test_client()

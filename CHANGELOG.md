@@ -1,5 +1,15 @@
 # Changelog
 
+## [6.2.0] - 2025-08-14
+
+### Changed
+
+- migrated to new extension system
+
+### Removed
+
+- removed creation of output directory at startup
+
 ## [6.1.0] - 2025-07-30
 
 ### Changed

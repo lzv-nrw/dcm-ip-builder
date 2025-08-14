@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 setup(
-    version="6.1.0",
+    version="6.2.0",
     name="dcm-ip-builder",
     description="flask app implementing the DCM IP Builder API",
     author="LZV.nrw",
