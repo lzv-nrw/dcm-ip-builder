@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 setup(
-    version="6.2.0",
+    version="6.3.0",
     name="dcm-ip-builder",
     description="flask app implementing the DCM IP Builder API",
     author="LZV.nrw",
@@ -15,7 +15,7 @@ setup(
         "bagit_profile>=1.3.1,<2.0.0",
         "lxml==5.*",
         "data-plumber-http>=1.0.0,<2",
-        "dcm-common[services, db, orchestration, xml]>=3.25.0,<4",
+        "dcm-common[services, db, orchestration, xml]>=3.28.0,<4",
         "dcm-ip-builder-api>=5.0.0,<6.0.0",
     ],
     packages=[

@@ -7,7 +7,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 from lxml import etree as et
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, Response
 from data_plumber_http.decorators import flask_handler, flask_args, flask_json
 from dcm_common import LoggingContext as Context
 from dcm_common.util import get_output_path
@@ -51,19 +51,28 @@ class BuildView(services.OrchestratedView):
         )
         def build(
             build: BuildConfig,
+            token: Optional[str] = None,
             callback_url: Optional[str] = None
         ):
             """Submit IE for IP building."""
-
-            token = self.orchestrator.submit(
-                JobConfig(
-                    request_body={
-                        "build": build.json,
-                        "callback_url": callback_url
-                    },
-                    context=self.NAME
+            try:
+                token = self.orchestrator.submit(
+                    JobConfig(
+                        request_body={
+                            "build": build.json,
+                            "callback_url": callback_url,
+                        },
+                        context=self.NAME,
+                    ),
+                    token=token,
                 )
-            )
+            except ValueError as exc_info:
+                return Response(
+                    f"Submission rejected: {exc_info}",
+                    mimetype="text/plain",
+                    status=400,
+                )
+
             return jsonify(token.json), 201
 
         self._register_abort_job(bp, "/build")

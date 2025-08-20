@@ -4,7 +4,7 @@ from typing import Mapping
 from pathlib import Path
 
 from data_plumber_http import Property, Object, Url, Boolean
-from dcm_common.services.handlers import TargetPath, PluginType
+from dcm_common.services.handlers import TargetPath, PluginType, UUID
 
 from dcm_ip_builder.models import Target, BuildConfig, ValidationConfig
 from dcm_ip_builder.plugins.mapping import MappingPlugin
@@ -59,11 +59,12 @@ def get_build_handler(
                     "BagItPayloadProfile",
                 ],
             ),
+            Property("token"): UUID(),
             Property("callbackUrl", name="callback_url"): Url(
                 schemes=["http", "https"]
             ),
         },
-        accept_only=["build", "callbackUrl"],
+        accept_only=["build", "token", "callbackUrl"],
     ).assemble()
 
 
@@ -98,9 +99,10 @@ def get_validate_ip_handler(cwd: Path):
                 },
                 accept_only=["target", "BagItProfile", "BagItPayloadProfile"],
             ),
+            Property("token"): UUID(),
             Property("callbackUrl", name="callback_url"): Url(
                 schemes=["http", "https"]
             ),
         },
-        accept_only=["validation", "callbackUrl"],
+        accept_only=["validation", "token", "callbackUrl"],
     ).assemble()
