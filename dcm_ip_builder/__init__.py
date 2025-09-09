@@ -4,26 +4,18 @@ This flask app implements the 'IP Builder'-API (see
 `openapi.yaml` in the sibling-package `dcm_ip_builder_api`).
 """
 
-from typing import Optional
 from time import time, sleep
 
 from flask import Flask
-from dcm_common.db import KeyValueStoreAdapter
-from dcm_common.orchestration import (
-    ScalableOrchestrator, get_orchestration_controls
-)
 from dcm_common.services import DefaultView, ReportView
 from dcm_common.services import extensions
 
 from dcm_ip_builder.config import AppConfig
 from dcm_ip_builder.views import BuildView, ValidationView
-from dcm_ip_builder.models import BuildReport, ValidationReport
 
 
 def app_factory(
     config: AppConfig,
-    queue: Optional[KeyValueStoreAdapter] = None,
-    registry: Optional[KeyValueStoreAdapter] = None,
     as_process: bool = False,
     block: bool = False,
 ):
@@ -31,10 +23,6 @@ def app_factory(
     Returns a flask-app-object.
 
     config -- app config derived from `AppConfig`
-    queue -- queue adapter override
-             (default None; use `MemoryStore`)
-    registry -- registry adapter override
-                (default None; use `MemoryStore`)
     as_process -- whether the app is intended to be run as process via
                   `app.run`; if `True`, startup tasks like starting
                   orchestration-daemon are prepended to `app.run`
@@ -48,51 +36,25 @@ def app_factory(
     app = Flask(__name__)
     app.config.from_object(config)
 
-    # create Orchestrator and OrchestratedView-classes
-    orchestrator = ScalableOrchestrator(
-        queue=queue or config.queue,
-        registry=registry or config.registry,
-        nprocesses=config.ORCHESTRATION_PROCESSES,
-    )
-    build_view = BuildView(
-        config=config,
-        report_type=BuildReport,
-        orchestrator=orchestrator,
-        context=BuildView.NAME
-    )
-    # add second View-class in the orchestrator
-    validation_view = ValidationView(
-        config=config,
-        report_type=ValidationReport,
-        orchestrator=orchestrator,
-        context=ValidationView.NAME
-    )
+    # create OrchestratedView-classes
+    validation_view = ValidationView(config)
+    build_view = BuildView(config)
+    # and register job-types with the worker-pool
+    validation_view.register_job_types()
+    build_view.register_job_types()
 
     # register extensions
     if config.ALLOW_CORS:
-        extensions.cors(app)
-    notifications_loader = extensions.notifications_loader(
-        app, config, as_process
-    )
-    orchestrator_loader = extensions.orchestration_loader(
-        app,
-        config,
-        orchestrator,
-        "IP Builder",
-        as_process,
-        [
-            extensions.ExtensionEventRequirement(
-                notifications_loader.ready,
-                "connection to notification-service",
-            )
-        ],
+        app.extensions["cors"] = extensions.cors_loader(app)
+    app.extensions["orchestra"] = extensions.orchestra_loader(
+        app, config, config.worker_pool, "IP Builder", as_process
     )
 
     def ready():
         """Define condition for readiness."""
         return (
-            not config.ORCHESTRATION_AT_STARTUP
-            or orchestrator_loader.ready.is_set()
+            not config.ORCHESTRA_AT_STARTUP
+            or app.extensions["orchestra"].ready.is_set()
         )
 
     # block until ready
@@ -101,38 +63,11 @@ def app_factory(
         while not ready() and time() - time0 < 10:
             sleep(0.01)
 
-    # register orchestrator-controls blueprint
-    if getattr(config, "TESTING", False) or config.ORCHESTRATION_CONTROLS_API:
-        app.register_blueprint(
-            get_orchestration_controls(
-                orchestrator,
-                orchestrator_loader.data,
-                orchestrator_settings={
-                    "cwd": config.FS_MOUNT_POINT,
-                    "interval": config.ORCHESTRATION_ORCHESTRATOR_INTERVAL,
-                },
-                daemon_settings={
-                    "interval": config.ORCHESTRATION_DAEMON_INTERVAL,
-                }
-            ),
-            url_prefix="/"
-        )
-
     # register blueprints
     app.register_blueprint(
-        DefaultView(config, ready=ready).get_blueprint(),
-        url_prefix="/"
+        DefaultView(config, ready=ready).get_blueprint(), url_prefix="/"
     )
-    app.register_blueprint(
-        build_view.get_blueprint(),
-        url_prefix="/"
-    )
-    app.register_blueprint(
-        validation_view.get_blueprint(),
-        url_prefix="/"
-    )
-    app.register_blueprint(
-        ReportView(config, orchestrator).get_blueprint(),
-        url_prefix="/"
-    )
+    app.register_blueprint(build_view.get_blueprint(), url_prefix="/")
+    app.register_blueprint(validation_view.get_blueprint(), url_prefix="/")
+    app.register_blueprint(ReportView(config).get_blueprint(), url_prefix="/")
     return app

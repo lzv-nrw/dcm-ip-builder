@@ -5,7 +5,6 @@ from dcm_common.services.tests import (
     fs_setup, fs_cleanup, external_service, run_service, wait_for_report
 )
 
-from dcm_ip_builder import app_factory
 from dcm_ip_builder.config import AppConfig
 from dcm_ip_builder.plugins.mapping import DemoMappingPlugin
 
@@ -38,12 +37,11 @@ def _testing_config(file_storage):
     """Returns test-config"""
     # setup config-class
     class TestingConfig(AppConfig):
-        ORCHESTRATION_AT_STARTUP = False
-        ORCHESTRATION_DAEMON_INTERVAL = 0.001
-        ORCHESTRATION_ORCHESTRATOR_INTERVAL = 0.001
-        ORCHESTRATION_ABORT_NOTIFICATIONS_STARTUP_INTERVAL = 0.01
-        TESTING = True
         FS_MOUNT_POINT = file_storage
+        TESTING = True
+        ORCHESTRA_DAEMON_INTERVAL = 0.01
+        ORCHESTRA_WORKER_INTERVAL = 0.01
+        ORCHESTRA_WORKER_ARGS = {"messages_interval": 0.01}
 
         MAPPING_PLUGINS = [DemoMappingPlugin]
         BAGIT_PROFILE_URL = "https://lzv.nrw/test_bagit_profile.json"
@@ -94,12 +92,3 @@ def _testing_config(file_storage):
             }
         }
     return TestingConfig
-
-
-@pytest.fixture(name="client")
-def _client(testing_config):
-    """
-    Returns test_client.
-    """
-
-    return app_factory(testing_config(), block=True).test_client()
