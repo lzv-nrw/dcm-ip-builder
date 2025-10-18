@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 import bagit_utils
-from dcm_common import LoggingContext as Context
+from dcm_common import util, LoggingContext as Context
 from dcm_common.models.data_model import get_model_serialization_test
 
 from dcm_ip_builder.plugins import BagItBagBuilder, BagItPluginResult
@@ -519,7 +519,7 @@ def test_get_no_payload(
     assert len(result.log[Context.WARNING]) == 1
 
 
-def test_get_bagit_validate_error(
+def test_get_bagit_utils_build_error(
     working_dir,
     test_ie,
     bag_info,
@@ -527,7 +527,8 @@ def test_get_bagit_validate_error(
     tagmanifests
 ):
     """
-    Test making a bag when the 'bagit.Bag.validate' method raises an error.
+    Test making a bag when the 'bagit_utils.Bag.build_from' method
+    raises an error.
     """
 
     # Initiate the BagBuilder
@@ -537,20 +538,54 @@ def test_get_bagit_validate_error(
         tagmanifests=tagmanifests
     )
 
-    # Make a bag and fake return of 'bagit.Bag.validate'
-    bagit_validate_exception = bagit.BagError('Some bagit.BagError.')
+    # Make a bag and fake return of 'bagit_utils.Bag.build_from'
+    bagit_utils_exception = bagit_utils.BagItError(
+        "Some bagit_utils.BagItError."
+    )
     with mock.patch(
-        "dcm_ip_builder.plugins.bag_builder.bagit.Bag.validate",
-        side_effect=bagit_validate_exception,
+        "dcm_ip_builder.plugins.bag_builder.bagit_utils.Bag.build_from",
+        side_effect=bagit_utils_exception,
     ):
         result = test_builder.get(
-            None,
-            src=str(test_ie),
-            bag_info=bag_info.copy()
+            None, src=str(test_ie), bag_info=bag_info.copy()
         )
 
     assert result.success is False
     assert result.path is None
-    assert "bagit.Bag.validate raised an error: " + str(
-        bagit_validate_exception
-    ) in str(result.log[Context.ERROR])
+    assert str(bagit_utils_exception) in str(result.log[Context.ERROR])
+
+
+def test_get_bagit_utils_validate_error(
+    working_dir,
+    test_ie,
+    bag_info,
+    manifests,
+    tagmanifests
+):
+    """
+    Test validating a bag when the 'bagit_utils.Bag.validate_format'
+    method returns error in report.
+    """
+
+    # Initiate the BagBuilder
+    test_builder = BagItBagBuilder(
+        working_dir=working_dir,
+        manifests=manifests,
+        tagmanifests=tagmanifests
+    )
+
+    # repeat with validate_format
+    with mock.patch(
+        "dcm_ip_builder.plugins.bag_builder.bagit_utils.Bag.validate_format",
+        return_value=bagit_utils.common.ValidationReport(
+            False,
+            [bagit_utils.common.Issue("error", "BagIt-validation error.")],
+        ),
+    ):
+        result = test_builder.get(
+            None, src=str(test_ie), bag_info=bag_info.copy()
+        )
+
+    assert result.success is False
+    assert result.path is None
+    assert "BagIt-validation error." in str(result.log[Context.ERROR])

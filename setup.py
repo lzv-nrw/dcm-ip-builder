@@ -11,7 +11,7 @@ setup(
     install_requires=[
         "flask==3.*",
         "PyYAML==6.*",
-        "bagit-utils>=1.1.1,<2.0.0",
+        "bagit-utils>=1.2.0,<2.0.0",
         "lxml==5.*",
         "data-plumber-http>=1.0.0,<2",
         "dcm-common[services, orchestra, xml]>=4.0.0,<5",

@@ -208,12 +208,12 @@ def test_build_no_payload(
 
     # success depends on whether validation is performed
     assert report["data"]["success"] == (not validate_flag)
-    # output exists and is a valid 'bagit.Bag'
+    # output exists and is a valid 'bagit_utils.Bag'
     assert "path" in report["data"]
     assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).exists()
     assert Bag(
-        str(testing_config.FS_MOUNT_POINT / report["data"]["path"])
-    ).is_valid()
+        testing_config.FS_MOUNT_POINT / report["data"]["path"]
+    ).validate().valid
 
     # a warning is included in the log from the bag-builder
     assert len(report["log"]["WARNING"]) >= 1
