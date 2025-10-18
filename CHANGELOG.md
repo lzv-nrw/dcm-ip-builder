@@ -1,5 +1,35 @@
 # Changelog
 
+## [7.0.0] - 2025-09-09
+
+### Changed
+
+- migrated to dcm-common v4
+- **Breaking:** migrated to API v6
+
+## [6.3.0] - 2025-08-20
+
+### Added
+
+- added support for submission token
+
+## [6.2.0] - 2025-08-14
+
+### Changed
+
+- migrated to new extension system
+
+### Removed
+
+- removed creation of output directory at startup
+
+## [6.1.0] - 2025-07-30
+
+### Changed
+
+- adapted the payload-structure validation-plugin to mark any IP without payload as invalid
+- added support for building an IP from an IE without payload
+
 ## [6.0.0] - 2025-07-25
 
 ### Changed

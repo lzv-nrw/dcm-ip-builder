@@ -180,6 +180,8 @@ class ExternalPlugin(MappingPlugin):
         return context.result
 ```
 
+All plugins are currently required to support pickling of instances via the [`dill`](https://github.com/uqfoundation/dill)-library.
+
 ## Docker
 Build an image using, for example,
 ```

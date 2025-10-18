@@ -5,17 +5,17 @@ Build View-class definition
 from typing import Optional
 from importlib.metadata import version
 from pathlib import Path
+import os
+from uuid import uuid4
 
 from lxml import etree as et
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, Response, request
 from data_plumber_http.decorators import flask_handler, flask_args, flask_json
 from dcm_common import LoggingContext as Context
 from dcm_common.util import get_output_path
-from dcm_common.orchestration import JobConfig, Job
+from dcm_common.orchestra import JobConfig, JobContext, JobInfo
 from dcm_common import services
-from dcm_common.services.plugins import PluginConfig
 
-from dcm_ip_builder.config import AppConfig
 from dcm_ip_builder.models import (
     BuildConfig,
     BuildReport,
@@ -31,10 +31,10 @@ class BuildView(services.OrchestratedView):
 
     NAME = "ip-build"
 
-    def __init__(
-        self, config: AppConfig, *args, **kwargs
-    ) -> None:
-        super().__init__(config, *args, **kwargs)
+    def register_job_types(self):
+        self.config.worker_pool.register_job_type(
+            self.NAME, self.build, BuildReport
+        )
 
     def configure_bp(self, bp: Blueprint, *args, **kwargs) -> None:
         @bp.route("/build", methods=["POST"])
@@ -45,117 +45,89 @@ class BuildView(services.OrchestratedView):
         @flask_handler(  # process ip-build
             handler=get_build_handler(
                 acceptable_plugins=self.config.mapping_plugins,
-                cwd=self.config.FS_MOUNT_POINT
+                cwd=self.config.FS_MOUNT_POINT,
             ),
             json=flask_json,
         )
         def build(
             build: BuildConfig,
-            callback_url: Optional[str] = None
+            token: Optional[str] = None,
+            callback_url: Optional[str] = None,
         ):
             """Submit IE for IP building."""
-
-            token = self.orchestrator.submit(
-                JobConfig(
-                    request_body={
-                        "build": build.json,
-                        "callback_url": callback_url
-                    },
-                    context=self.NAME
+            try:
+                token = self.config.controller.queue_push(
+                    token or str(uuid4()),
+                    JobInfo(
+                        JobConfig(
+                            self.NAME,
+                            original_body=request.json,
+                            request_body={
+                                "build": build.json,
+                                "callback_url": callback_url,
+                            },
+                        ),
+                        report=BuildReport(
+                            host=request.host_url, args=request.json
+                        ),
+                    ),
                 )
-            )
+            # pylint: disable=broad-exception-caught
+            except Exception as exc_info:
+                return Response(
+                    f"Submission rejected: {exc_info}",
+                    mimetype="text/plain",
+                    status=500,
+                )
+
             return jsonify(token.json), 201
 
         self._register_abort_job(bp, "/build")
 
-    def get_job(self, config: JobConfig) -> Job:
-        return Job(
-            cmd=lambda push, data: self.build(
-                push, data,
-                build_config=BuildConfig(
-                    target=Target.from_json(
-                        config.request_body["build"]["target"]
-                    ),
-                    mapping_plugin=PluginConfig.from_json(
-                        config.request_body["build"]["mapping_plugin"]
-                    ),
-                    validate=config.request_body["build"]["validate"],
-                    bagit_profile_url=(
-                        config.request_body["build"].get(
-                            "bagit_profile_url", None
-                        )
-                    ),
-                    payload_profile_url=(
-                        config.request_body["build"].get(
-                            "payload_profile_url", None
-                        )
-                    ),
-                ),
-            ),
-            hooks={
-                "startup": services.default_startup_hook,
-                "success": services.default_success_hook,
-                "fail": services.default_fail_hook,
-                "abort": services.default_abort_hook,
-                "completion": services.termination_callback_hook_factory(
-                    config.request_body.get("callback_url", None),
-                )
-            },
-            name="IP Builder"
-        )
-
-    def build(
-        self, push, report: BuildReport,
-        build_config: BuildConfig
-    ):
-        """
-        Job instructions for the '/build' endpoint.
-
-        Orchestration standard-arguments:
-        push -- (orchestration-standard) push `report` to host process
-        report -- (orchestration-standard) common report-object shared
-                  via `push`
-
-        Keyword arguments:
-        build_config -- a `BuildConfig`-config
-        """
+    def build(self, context: JobContext, info: JobInfo):
+        """Job instructions for the '/build' endpoint."""
+        os.chdir(self.config.FS_MOUNT_POINT)
+        build_config = BuildConfig.from_json(info.config.request_body["build"])
+        info.report.log.set_default_origin("IP Builder")
 
         # set progress info
-        report.progress.verbose = (
+        info.report.progress.verbose = (
             f"building IP from '{build_config.target.path}'"
         )
-        report.log.log(
+        info.report.log.log(
             Context.INFO,
-            body=f"Building IP from IE '{build_config.target.path}'."
+            body=f"Building IP from IE '{build_config.target.path}'.",
         )
-        push()
+        context.push()
 
         # Create IP_path for the bag or exit if not successful
-        report.data.path = get_output_path(
-            self.config.IP_OUTPUT
-        )
-        if report.data.path is None:
-            report.data.success = False
-            report.log.log(
+        info.report.data.path = get_output_path(self.config.IP_OUTPUT)
+        if info.report.data.path is None:
+            info.report.data.success = False
+            info.report.log.log(
                 Context.ERROR,
                 body="Unable to generate output directory in "
                 + f"'{self.config.FS_MOUNT_POINT / self.config.IP_OUTPUT}'"
-                + "(maximum retries exceeded)."
+                + "(maximum retries exceeded).",
             )
-            push()
+            context.push()
+            # make callback; rely on _run_callback to push progress-update
+            info.report.progress.complete()
+            self._run_callback(
+                context, info, info.config.request_body.get("callback_url")
+            )
             return
-        report.log.log(
-            Context.INFO,
-            body=f"Building IP at '{report.data.path}'."
+        info.report.log.log(
+            Context.INFO, body=f"Building IP at '{info.report.data.path}'."
         )
-        push()
+        context.push()
 
         # Generate metadata-subset for bag-info.txt
         # prepare plugin-call by linking data
         plugin = self.config.mapping_plugins[
             build_config.mapping_plugin.plugin
         ]
-        report.data.details["mapping"] = plugin.get(
+        info.report.data.details["mapping"] = plugin.get(
             None,
             **(
                 build_config.mapping_plugin.args
@@ -166,25 +138,30 @@ class BuildView(services.OrchestratedView):
                 }
             ),
         )
-        report.log.merge(report.data.details["mapping"].log)
-        if not report.data.details["mapping"].success:
-            report.log.log(
+        info.report.log.merge(info.report.data.details["mapping"].log)
+        if not info.report.data.details["mapping"].success:
+            info.report.log.log(
                 Context.ERROR,
-                body="Mapping-plugin did not succeed, cannot continue."
+                body="Mapping-plugin did not succeed, cannot continue.",
             )
-            report.data.success = False
-            push()
+            info.report.data.success = False
+            context.push()
+            # make callback; rely on _run_callback to push progress-update
+            info.report.progress.complete()
+            self._run_callback(
+                context, info, info.config.request_body.get("callback_url")
+            )
             return
 
         # Provide additional information for bag-info
-        if not report.data.details["mapping"].metadata:
-            report.data.details["mapping"].metadata = {}
-            report.log.log(
+        if not info.report.data.details["mapping"].metadata:
+            info.report.data.details["mapping"].metadata = {}
+            info.report.log.log(
                 Context.WARNING,
-                body="Received empty bag-info from mapping plugin."
+                body="Received empty bag-info from mapping plugin.",
             )
-            push()
-        report.data.details["mapping"].metadata.update(
+            context.push()
+        info.report.data.details["mapping"].metadata.update(
             {
                 "Bag-Software-Agent": (
                     f"dcm-ip-builder v{version('dcm-ip-builder')}"
@@ -199,75 +176,83 @@ class BuildView(services.OrchestratedView):
                 ),
             }
         )
-        push()
+        context.push()
 
         # Build IP and append plugin result into details
-        report.data.details["build"] = self.config.build_plugin.get(
+        info.report.data.details["build"] = self.config.build_plugin.get(
             None,
             src=str(build_config.target.path),
-            bag_info=report.data.details["mapping"].metadata,
-            dest=str(report.data.path),
-            exist_ok=True
+            bag_info=info.report.data.details["mapping"].metadata,
+            dest=str(info.report.data.path),
+            exist_ok=True,
         )
-        # Copy all error messages in the main log
-        report.log.merge(
-            report.data.details["build"].log.pick(Context.ERROR)
-        )
-        push()
+        info.report.log.merge(info.report.data.details["build"].log)
+        context.push()
 
         # exit if building failed
-        if not report.data.details["build"].success:
-            report.data.success = False
-            report.log.log(
+        if not info.report.data.details["build"].success:
+            info.report.data.success = False
+            info.report.log.log(
                 Context.ERROR,
                 body=f"Building IP from IE '{build_config.target.path}' "
-                + "failed."
+                + "failed.",
             )
-            push()
+            context.push()
+            # make callback; rely on _run_callback to push progress-update
+            info.report.progress.complete()
+            self._run_callback(
+                context, info, info.config.request_body.get("callback_url")
+            )
             return
 
         # Prepare dc.xml
         if self.generate_dc_xml(
             build_config.target.path
-                / self.config.META_DIRECTORY
-                / self.config.SOURCE_METADATA,
-            report.data.path
-                / self.config.META_DIRECTORY
-                / self.config.DC_METADATA
+            / self.config.META_DIRECTORY
+            / self.config.SOURCE_METADATA,
+            info.report.data.path
+            / self.config.META_DIRECTORY
+            / self.config.DC_METADATA,
         ):
-            report.log.log(
+            info.report.log.log(
                 Context.INFO,
                 body="DC-Metadata detected, '"
                 + str(self.config.META_DIRECTORY / self.config.DC_METADATA)
-                + "' written."
+                + "' written.",
             )
-            push()
+            context.push()
 
-        report.log.log(
+        info.report.log.log(
             Context.INFO,
             body="Successfully assembled IP at "
-            + f"'{report.data.path}'."
+            + f"'{info.report.data.path}'.",
         )
-        push()
+        context.push()
 
         # validate IP, if required
         if build_config.validate:
             ValidationView(self.config).validate(
-                push,
-                report=report,
+                context,
+                info,
                 validation_config=ValidationConfig(
-                    target=Target(path=report.data.path),
+                    target=Target(path=info.report.data.path),
                     bagit_profile_url=build_config.bagit_profile_url,
-                    payload_profile_url=build_config.payload_profile_url
+                    payload_profile_url=build_config.payload_profile_url,
                 ),
             )
-            if not report.data.valid:
-                report.data.success = False
+            if not info.report.data.valid:
+                info.report.data.success = False
             else:
-                report.data.success = True
+                info.report.data.success = True
         else:
-            report.data.success = True
-        push()
+            info.report.data.success = True
+        context.push()
+
+        # make callback; rely on _run_callback to push progress-update
+        info.report.progress.complete()
+        self._run_callback(
+            context, info, info.config.request_body.get("callback_url")
+        )
 
     def generate_dc_xml(self, src_path: Path, dest_path: Path) -> bool:
         """
@@ -287,10 +272,7 @@ class BuildView(services.OrchestratedView):
         # to discard xml file formatting from the source file
         parser = et.XMLParser(remove_blank_text=True)
         # Get the element tree of the source file
-        src_tree = et.parse(
-            src_path,
-            parser
-        )
+        src_tree = et.parse(src_path, parser)
         # From anywhere in the source document
         # find the tag "oai_dc:dc" to copy in dc.xml
         src_tag = src_tree.find(
@@ -300,8 +282,10 @@ class BuildView(services.OrchestratedView):
             # Get the dc-element tree of the destination file and write to
             # dest_path
             et.ElementTree(src_tag).write(
-                dest_path, xml_declaration=True,
-                encoding="UTF-8", pretty_print=True
+                dest_path,
+                xml_declaration=True,
+                encoding="UTF-8",
+                pretty_print=True,
             )
             return True
         return False

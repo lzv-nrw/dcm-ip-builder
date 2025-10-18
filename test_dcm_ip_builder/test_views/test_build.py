@@ -1,118 +1,94 @@
 """Test-module for build-endpoint."""
 
 from pathlib import Path
-from unittest import mock
+from shutil import copytree
+from uuid import uuid4
 
 import pytest
 from bagit import Bag
 from lxml import etree as et
 from dcm_common.util import list_directory_content
 
+from dcm_ip_builder import app_factory
+
 
 @pytest.fixture(name="minimal_request_body")
 def _minimal_request_body():
     return {
         "build": {
-            "target": {
-                "path": str("test-ie")
-            },
-            "mappingPlugin": {
-                "plugin": "demo",
-                "args": {}
-            }
+            "target": {"path": str("test-ie")},
+            "mappingPlugin": {"plugin": "demo", "args": {}},
         }
     }
 
 
-def test_build_minimal(
-    client, testing_config, minimal_request_body, wait_for_report
-):
+@pytest.fixture(name="duplicate_ie")
+def _duplicate_ie(file_storage, testing_config):
+    """Duplicates "test-ie" to another directory."""
+    duplicate = testing_config.FS_MOUNT_POINT / str(uuid4())
+    copytree(file_storage / "test-ie", duplicate)
+    return duplicate
+
+
+def test_build_minimal(testing_config, minimal_request_body):
     """Test basic functionality of /build-POST endpoint."""
 
+    app = app_factory(testing_config())
+    client = app.test_client()
+
     # submit job
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/build", json=minimal_request_body)
 
     assert response.status_code == 201
     assert response.mimetype == "application/json"
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
 
-    assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).is_dir()
+    assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).is_dir()
     assert Bag(
-        str(testing_config.FS_MOUNT_POINT / json["data"]["path"])
+        str(testing_config.FS_MOUNT_POINT / report["data"]["path"])
     ).is_valid()
-    assert json["data"]["valid"]
-    assert json["data"]["success"]
-    assert json["data"]["originSystemId"] == "id"
-    assert json["data"]["externalId"] == "0"
-    assert "BagIt-Validation-Plugin" in str(json["log"])
+    assert report["data"]["valid"]
+    assert report["data"]["success"]
+    assert report["data"]["originSystemId"] == "id"
+    assert report["data"]["externalId"] == "0"
+    assert "BagIt-Validation-Plugin" in str(report["log"])
 
 
-def test_build_minimal_no_validation(
-    client, testing_config, minimal_request_body, wait_for_report
-):
+def test_build_minimal_no_validation(testing_config, minimal_request_body):
     """
     Test basic functionality of /build-POST endpoint without validation.
     """
 
+    app = app_factory(testing_config())
+    client = app.test_client()
+
     # submit job
     minimal_request_body["build"]["validate"] = False
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/build", json=minimal_request_body)
 
     # wait until job is completed
-    json = wait_for_report(client, response.json["value"])
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={response.json['value']}").json
 
-    assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).is_dir()
-    assert "valid" not in json["data"]
-    assert "originSystemId" not in json["data"]
-    assert "externalId" not in json["data"]
-    assert json["data"]["success"]
-    assert "BagIt-Validation-Plugin" not in str(json["log"])
-
-
-def test_build_failing_get_output_path(
-    client, minimal_request_body, wait_for_report
-):
-    """Test basic functionality of /build-POST endpoint."""
-    patcher = mock.patch(
-        "dcm_ip_builder.views.build.get_output_path",
-        side_effect=lambda *args, **kwargs: None
-    )
-    patcher.start()
-
-    # submit job
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
-
-    assert response.status_code == 201
-    token = response.json["value"]
-
-    # wait until job is completed
-    json = wait_for_report(client, token)
-
-    assert "path" not in json["data"]
-    assert not json["data"]["success"]
-
-    patcher.stop()
+    assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).is_dir()
+    assert "valid" not in report["data"]
+    assert "originSystemId" not in report["data"]
+    assert "externalId" not in report["data"]
+    assert report["data"]["success"]
+    assert "BagIt-Validation-Plugin" not in str(report["log"])
 
 
 def test_build_missing_meta(
-    client, file_storage, minimal_request_body, wait_for_report
+    file_storage, minimal_request_body, testing_config
 ):
     """Test /build-POST with missing metadata."""
+
+    app = app_factory(testing_config())
+    client = app.test_client()
 
     # submit job
     minimal_request_body["build"]["target"]["path"] = str(
@@ -120,66 +96,61 @@ def test_build_missing_meta(
         / "test-ie-missing-meta"
     )
 
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/build", json=minimal_request_body)
 
     assert response.status_code == 201
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
 
     # output is invalid
-    assert not json["data"]["success"]
-    assert len(json["log"]["ERROR"]) == 2
-    assert "valid" not in json["data"]
+    assert not report["data"]["success"]
+    assert len(report["log"]["ERROR"]) == 2
+    assert "valid" not in report["data"]
 
     # directory for fs-hook exists but is empty
-    assert "path" in json["data"]
-    assert (file_storage / json["data"]["path"]).exists()
+    assert "path" in report["data"]
+    assert (file_storage / report["data"]["path"]).exists()
     assert (
-        len(list_directory_content(file_storage / json["data"]["path"])) == 0
+        len(list_directory_content(file_storage / report["data"]["path"])) == 0
     )
 
 
 @pytest.mark.parametrize(
     ("ie", "dcxml_exists"),
-    [
-        ("test-ie", True),
-        ("test-ie-mets", False)
-    ],
-    ids=["dc-metadata", "mets-metadata"]
+    [("test-ie", True), ("test-ie-mets", False)],
+    ids=["dc-metadata", "mets-metadata"],
 )
-def test_build_dc_xml(
-    ie, dcxml_exists, testing_config, client, minimal_request_body, wait_for_report
-):
+def test_build_dc_xml(ie, dcxml_exists, testing_config, minimal_request_body):
     """Test basic functionality of /build-POST endpoint."""
+
+    app = app_factory(testing_config())
+    client = app.test_client()
+
     # submit job
     minimal_request_body["build"]["target"]["path"] = str(
         Path(minimal_request_body["build"]["target"]["path"]).parent / ie
     )
 
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/build", json=minimal_request_body)
 
     assert response.status_code == 201
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
 
     # output of attempt should exist
-    assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).is_dir()
-    dcxml = testing_config.FS_MOUNT_POINT \
-        / json["data"]["path"] \
-        / testing_config.META_DIRECTORY \
+    assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).is_dir()
+    dcxml = (
+        testing_config.FS_MOUNT_POINT
+        / report["data"]["path"]
+        / testing_config.META_DIRECTORY
         / testing_config.DC_METADATA
+    )
     assert dcxml.is_file() == dcxml_exists
     if dcxml_exists:
         parser = et.XMLParser(remove_blank_text=True)
@@ -188,67 +159,72 @@ def test_build_dc_xml(
         creator = src_tree.find(".//{http://purl.org/dc/elements/1.1/}creator")
         assert title.text == "Some title"
         assert creator.text == "Max Muster, et al."
-        assert json["data"]["success"]
-        assert json["data"]["valid"]
+        assert report["data"]["success"]
+        assert report["data"]["valid"]
     else:
-        assert not json["data"]["success"]
-        assert not json["data"]["valid"]
+        assert not report["data"]["success"]
+        assert not report["data"]["valid"]
 
 
 @pytest.mark.parametrize(
-    ("request_body_path", "new_value", "expected_status"),
-    [
-        (
-            [],
-            None,
-            201
-        ),
-        (
-            ["build", "target", "path2"],
-            0,
-            400
-        ),
-        (
-            ["build", "configuration"],
-            "nonsense",
-            400
-        ),
-        (
-            ["callbackUrl"],
-            "no-url",
-            422
-        ),
-    ],
-    ids=[
-        "good", "bad_target", "bad_configuration",
-        "bad_calback_url",
-    ]
+    ("validate_flag"),
+    [(False), (True)],
+    ids=["validate_False", "validate_True"],
 )
-def test_build_handlers(
-    client, minimal_request_body, request_body_path, new_value,
-    expected_status,
+def test_build_no_payload(
+    minimal_request_body,
+    duplicate_ie,
+    testing_config,
+    validate_flag,
 ):
-    """
-    Test correct application of handlers in /build-POST endpoint.
-    """
+    """Test /build-POST for an IE without payload."""
 
-    def set_inner_dict(in_, keys, value):
-        if len(keys) == 0:
-            return
-        if len(keys) == 1:
-            in_[keys[0]] = value
-            return
-        return set_inner_dict(in_[keys[0]], keys[1:], value)
-    set_inner_dict(minimal_request_body, request_body_path, new_value)
+    app = app_factory(testing_config())
+    client = app.test_client()
 
-    response = client.post(
-        "/build",
-        json=minimal_request_body
+    # Remove payload
+    for payload_file in list_directory_content(
+        duplicate_ie / "data",
+        pattern="**/*",
+        condition_function=lambda p: p.is_file(),
+    ):
+        payload_file.unlink()
+
+    # submit job
+    minimal_request_body["build"]["target"]["path"] = str(
+        Path(minimal_request_body["build"]["target"]["path"]).parent
+        / duplicate_ie.name
     )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    minimal_request_body["build"]["validate"] = validate_flag
 
-    assert response.status_code == expected_status
-    if response.status_code == 201:
-        assert response.mimetype == "application/json"
-    else:
-        assert response.mimetype == "text/plain"
+    response = client.post("/build", json=minimal_request_body)
+
+    assert response.status_code == 201
+    token = response.json["value"]
+
+    # wait until job is completed
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
+
+    # success depends on whether validation is performed
+    assert report["data"]["success"] == (not validate_flag)
+    # output exists and is a valid 'bagit.Bag'
+    assert "path" in report["data"]
+    assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).exists()
+    assert Bag(
+        str(testing_config.FS_MOUNT_POINT / report["data"]["path"])
+    ).is_valid()
+
+    # a warning is included in the log from the bag-builder
+    assert len(report["log"]["WARNING"]) >= 1
+    assert any(
+        "IE contains no payload files. Generating empty manifest files."
+        in m["body"]
+        for m in report["log"]["WARNING"]
+    )
+
+    if validate_flag:
+        assert report["data"]["valid"] is False
+        assert report["data"]["details"]["bagit-profile"]["valid"]
+        assert report["data"]["details"]["significant-properties"]["valid"]
+        assert report["data"]["details"]["payload-structure"]["valid"] is False

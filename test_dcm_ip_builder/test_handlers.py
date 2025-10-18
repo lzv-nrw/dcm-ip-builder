@@ -121,6 +121,18 @@ def _build_handler(fixtures):
             {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "validate": False}},
             Responses.GOOD.status
         ),
+        (  # token
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}, "token": None},
+            422
+        ),
+        (
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}, "token": "non-uuid"},
+            422
+        ),
+        (
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}, "token": "37ee72d6-80ab-4dcd-a68d-f8d32766c80d"},
+            Responses.GOOD.status
+        ),
     ]),
     ids=[f"stage {i+1}" for i in range(len(pytest_args))]
 )

@@ -2,9 +2,12 @@
 
 from pathlib import Path
 from copy import deepcopy
-from unittest import mock
+from uuid import uuid4
+from shutil import copytree
 
 import pytest
+
+from dcm_ip_builder import app_factory
 
 
 @pytest.fixture(name="minimal_request_body")
@@ -16,188 +19,127 @@ def _minimal_request_body():
     }
 
 
-def test_validate_minimal(
-    client, minimal_request_body, wait_for_report
-):
+def test_validate_minimal(minimal_request_body, testing_config):
     """Test minimal functionality of /validate-POST endpoint."""
 
+    app = app_factory(testing_config())
+    client = app.test_client()
+
     # submit job
-    response = client.post(
-        "/validate",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/validate", json=minimal_request_body)
 
     assert response.status_code == 201
     assert response.mimetype == "application/json"
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
-    assert json["data"]["valid"]
-    assert json["data"]["originSystemId"] == "id"
-    assert json["data"]["externalId"] == "0"
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
+
+    assert report["data"]["valid"]
+    assert report["data"]["originSystemId"] == "id"
+    assert report["data"]["externalId"] == "0"
 
 
 @pytest.mark.parametrize(
     ("ip", "valid"),
-    [
-        ("test-bag", True),
-        ("test-bag_bad", False)
-    ],
-    ids=["valid-ip", "invalid-ip"]
+    [("test-bag", True), ("test-bag_bad", False)],
+    ids=["valid-ip", "invalid-ip"],
 )
-def test_validate(
-    client, minimal_request_body, wait_for_report, ip, valid
-):
+def test_validate(minimal_request_body, testing_config, ip, valid):
     """Test functionality of /validate-POST endpoint."""
+
+    app = app_factory(testing_config())
+    client = app.test_client()
 
     # submit job
     request_body = deepcopy(minimal_request_body)
     request_body["validation"]["target"]["path"] = str(
         Path(minimal_request_body["validation"]["target"]["path"]).parent / ip
     )
-    response = client.post(
-        "/validate",
-        json=request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/validate", json=request_body)
 
     assert response.status_code == 201
     assert response.mimetype == "application/json"
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
-    assert json["data"]["valid"] is valid
-    assert ("originSystemId" in json["data"]) is valid
-    assert ("externalId" in json["data"]) is valid
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
+
+    assert report["data"]["valid"] is valid
+    assert ("originSystemId" in report["data"]) is valid
+    assert ("externalId" in report["data"]) is valid
 
 
-@pytest.mark.parametrize(
-    ("profile", "valid"),
-    [
-        ("https://lzv.nrw/test_bagit_profile.json", True),
-        ("request_bagit_profile", False)  # expected validation error: 'BagIt-Profile-Identifier' tag does not contain this profile's URI: <https://lzv.nrw/tests_bagit_profile.json> != <request_bagit_profile>"
-    ],
-    ids=["valid-ip", "invalid-ip"]
-)
 def test_validate_with_argument(
-    client, minimal_request_body, wait_for_report,
-    profile, valid, testing_config
+    minimal_request_body,
+    testing_config,
+    fixtures,
+    file_storage,
+    run_service,
 ):
     """
     Test /validate-POST endpoint with a plugin-argument in the request.
     """
+    # fake profile server
+    fake_profile_url = "http://localhost:8081/profile.json"
+    fake_profile = deepcopy(testing_config.BAGIT_PROFILE)
+    fake_profile["BagIt-Profile-Info"][
+        "BagIt-Profile-Identifier"
+    ] = fake_profile_url
+    fake_payload_profile_url = "http://localhost:8081/payload-profile.json"
+    fake_payload_profile = deepcopy(testing_config.PAYLOAD_PROFILE)
+    fake_payload_profile["BagIt-Payload-Profile-Info"][
+        "BagIt-Payload-Profile-Identifier"
+    ] = fake_payload_profile_url
+    run_service(
+        routes=[
+            ("/profile.json", lambda: fake_profile, ["GET"]),
+            ("/payload-profile.json", lambda: fake_payload_profile, ["GET"]),
+        ],
+        port=8081,
+    )
+
+    # create fake ip ip
+    path = file_storage / str(uuid4())
+    copytree(fixtures / "test-bag", path)
+    (path / "bag-info.txt").write_text(
+        f"""Bag-Software-Agent: dcm-ip-builder v0.0.0
+BagIt-Payload-Profile-Identifier: {fake_payload_profile_url}
+BagIt-Profile-Identifier: {fake_profile_url}
+Bagging-DateTime: 2024-03-27T15:22:38+01:00
+DC-Creator: Max Muster, et al.
+DC-Rights: https://creativecommons.org/licenses/by-nd/3.0/de/
+DC-Title: Some title
+External-Identifier: 0
+Origin-System-Identifier: id
+Payload-Oxum: 2222.2
+Source-Organization: https://d-nb.info/gnd/2047974-8
+""",
+        encoding="utf-8",
+    )
+
+    app = app_factory(testing_config())
+    client = app.test_client()
 
     # submit job
-    request_body = deepcopy(minimal_request_body)
-    request_body["validation"]["target"]["path"] = str(
-        Path(minimal_request_body["validation"]["target"]["path"]).parent
-        / "test-bag"
-    )
-    request_body["validation"]["BagItProfile"] = profile
+    minimal_request_body["validation"]["target"]["path"] = path.name
+    minimal_request_body["validation"]["BagItProfile"] = fake_profile_url
 
-    # fake get_profile
-    patcher_get_profile = mock.patch(
-        "dcm_ip_builder.plugins.validation.bagit_profile.PatchedProfile.get_profile",
-        side_effect=lambda *args, **kwargs: testing_config.BAGIT_PROFILE
-    )
-    patcher_get_profile.start()
-
-    response = client.post(
-        "/validate",
-        json=request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/validate", json=minimal_request_body)
 
     assert response.status_code == 201
     assert response.mimetype == "application/json"
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
-    assert json["data"]["valid"] is valid
-    assert ("originSystemId" in json["data"]) is valid
-    assert ("externalId" in json["data"]) is valid
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
+    from dcm_ip_builder.models import ValidationReport
 
-    patcher_get_profile.stop()
+    print(ValidationReport.from_json(report).log.fancy())
 
-
-@pytest.mark.parametrize(
-    ("request_body_path", "new_value", "expected_status"),
-    [
-        (
-            [],
-            None,
-            201
-        ),
-        (
-            ["validation", "target", "path2"],
-            0,
-            400
-        ),
-        (
-            ["validation", "plugins"],
-            0,
-            400
-        ),
-        (
-            ["callbackUrl"],
-            "no-url",
-            422
-        ),
-    ],
-    ids=[
-        "good", "bad_target", "bad_plugins", "bad_callback_url",
-    ]
-)
-def test_validate_ip_handlers(
-    client, minimal_request_body, request_body_path, new_value, expected_status
-):
-    """
-    Test correct application of handlers in /validate-POST endpoint.
-    """
-
-    def set_inner_dict(in_, keys, value):
-        if len(keys) == 0:
-            return
-        if len(keys) == 1:
-            in_[keys[0]] = value
-            return
-        return set_inner_dict(in_[keys[0]], keys[1:], value)
-
-    request_body = deepcopy(minimal_request_body)
-    set_inner_dict(request_body, request_body_path, new_value)
-
-    response = client.post(
-        "/validate",
-        json=request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
-
-    assert response.status_code == expected_status
-    if response.status_code == 201:
-        assert response.mimetype == "application/json"
-    else:
-        assert response.mimetype == "text/plain"
-
-
-def test_validate_ip_handlers_missing_validation_block(
-    client, minimal_request_body
-):
-    """
-    Test correct application of handlers in /validate-POST endpoint.
-    """
-
-    request_body = deepcopy(minimal_request_body)
-    del request_body["validation"]
-
-    response = client.post(
-        "/validate",
-        json=request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
-
-    assert response.status_code == 400
-    assert response.mimetype == "text/plain"
+    assert report["data"]["valid"]
+    assert "originSystemId" in report["data"]
+    assert "externalId" in report["data"]

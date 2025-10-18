@@ -2,6 +2,7 @@
 
 from shutil import copytree, rmtree
 from pathlib import Path
+from unittest import mock
 
 import pytest
 import bagit
@@ -515,3 +516,78 @@ def test_get_additional_root_folder(
     assert not result.success
     assert result.path is None
     assert len(result.log[Context.ERROR]) > 0
+
+
+def test_get_no_payload(
+    working_dir,
+    test_ie,
+    bag_info,
+    manifests,
+    tagmanifests
+):
+    """
+    Test making a bag from an IE without payload.
+    """
+
+    # Remove payload
+    for payload_file in util.list_directory_content(
+        test_ie / "data",
+        pattern="**/*",
+        condition_function=lambda p: p.is_file()
+    ):
+        payload_file.unlink()
+
+    # Initiate the BagBuilder
+    test_builder = BagItBagBuilder(
+        working_dir=working_dir,
+        manifests=manifests,
+        tagmanifests=tagmanifests
+    )
+
+    # Make a bag
+    result = test_builder.get(
+        None,
+        src=str(test_ie),
+        bag_info=bag_info.copy()
+    )
+
+    assert result.success
+    assert result.path is not None
+    assert len(result.log[Context.WARNING]) == 1
+
+
+def test_get_bagit_validate_error(
+    working_dir,
+    test_ie,
+    bag_info,
+    manifests,
+    tagmanifests
+):
+    """
+    Test making a bag when the 'bagit.Bag.validate' method raises an error.
+    """
+
+    # Initiate the BagBuilder
+    test_builder = BagItBagBuilder(
+        working_dir=working_dir,
+        manifests=manifests,
+        tagmanifests=tagmanifests
+    )
+
+    # Make a bag and fake return of 'bagit.Bag.validate'
+    bagit_validate_exception = bagit.BagError('Some bagit.BagError.')
+    with mock.patch(
+        "dcm_ip_builder.plugins.bag_builder.bagit.Bag.validate",
+        side_effect=bagit_validate_exception,
+    ):
+        result = test_builder.get(
+            None,
+            src=str(test_ie),
+            bag_info=bag_info.copy()
+        )
+
+    assert result.success is False
+    assert result.path is None
+    assert "bagit.Bag.validate raised an error: " + str(
+        bagit_validate_exception
+    ) in str(result.log[Context.ERROR])

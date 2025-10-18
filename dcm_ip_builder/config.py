@@ -148,7 +148,11 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
     )
 
     def __init__(self) -> None:
-        # initialize plugins
+        self.load_plugins()
+        super().__init__()
+
+    def load_plugins(self):
+        """Loads plugins for mapping, build, and validation."""
         # ------ BUILD ------
         self.mapping_plugins = load_plugins(self.MAPPING_PLUGINS)
         if self.ADDITIONAL_MAPPING_PLUGINS_DIR is not None:
@@ -182,7 +186,6 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
                 known_sig_prop=self.VALIDATION_SIGPROP_KNOWN_TYPES,
             ),
         }
-        super().__init__()
 
     def set_identity(self) -> None:
         super().set_identity()

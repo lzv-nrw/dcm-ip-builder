@@ -4,13 +4,15 @@ Validation View-class definition
 
 from typing import Optional
 from pathlib import Path
+import os
+from uuid import uuid4
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, Response, request
 import bagit
 from data_plumber_http.decorators import flask_handler, flask_args, flask_json
 from dcm_common import LoggingContext as Context
 from dcm_common import services
-from dcm_common.orchestration import JobConfig, Job
+from dcm_common.orchestra import JobConfig, JobContext, JobInfo
 
 from dcm_ip_builder.handlers import get_validate_ip_handler
 from dcm_ip_builder.models import ValidationReport, ValidationConfig
@@ -21,6 +23,11 @@ class ValidationView(services.OrchestratedView):
     """View-class for ip-validation."""
 
     NAME = "ip-validation"
+
+    def register_job_types(self):
+        self.config.worker_pool.register_job_type(
+            self.NAME, self.validate, ValidationReport
+        )
 
     def configure_bp(self, bp: Blueprint, *args, **kwargs) -> None:
 
@@ -35,47 +42,40 @@ class ValidationView(services.OrchestratedView):
         )
         def validate(
             validation: ValidationConfig,
+            token: Optional[str] = None,
             callback_url: Optional[str] = None,
         ):
             """Validate IP."""
-
-            token = self.orchestrator.submit(
-                JobConfig(
-                    request_body={
-                        "validation": validation.json,
-                        "callback_url": callback_url
-                    },
-                    context=self.NAME
+            try:
+                token = self.config.controller.queue_push(
+                    token or str(uuid4()),
+                    JobInfo(
+                        JobConfig(
+                            self.NAME,
+                            original_body=request.json,
+                            request_body={
+                                "validation": validation.json,
+                                "callback_url": callback_url,
+                            },
+                        ),
+                        report=ValidationReport(
+                            host=request.host_url, args=request.json
+                        ),
+                    ),
                 )
-            )
+            # pylint: disable=broad-exception-caught
+            except Exception as exc_info:
+                return Response(
+                    f"Submission rejected: {exc_info}",
+                    mimetype="text/plain",
+                    status=500,
+                )
+
             return jsonify(token.json), 201
 
         self._register_abort_job(bp, "/validate")
 
-    def get_job(self, config: JobConfig) -> Job:
-        return Job(
-            cmd=lambda push, data: self.validate(
-                push,
-                data,
-                validation_config=ValidationConfig.from_json(
-                    config.request_body["validation"]
-                )
-            ),
-            hooks={
-                "startup": services.default_startup_hook,
-                "success": services.default_success_hook,
-                "fail": services.default_fail_hook,
-                "abort": services.default_abort_hook,
-                "completion": services.termination_callback_hook_factory(
-                    config.request_body.get("callback_url", None),
-                )
-            },
-            name="IP Builder"
-        )
-
-    def load_identifiers(
-        self, path: Path, report: ValidationReport
-    ) -> None:
+    def load_identifiers(self, path: Path, report: ValidationReport) -> None:
         """
         Loads identifiers from IP-metadata into `report.data`. Fails
         silently.
@@ -90,46 +90,43 @@ class ValidationView(services.OrchestratedView):
                 body=f"Unable to load IP-identifiers: {exc_info}",
             )
         else:
-            report.data.external_id = baginfo.get(
-                "External-Identifier"
-            )
+            report.data.external_id = baginfo.get("External-Identifier")
             report.data.origin_system_id = baginfo.get(
                 "Origin-System-Identifier"
             )
 
     def validate(
         self,
-        push,
-        report: ValidationReport,
-        validation_config: ValidationConfig
+        context: JobContext,
+        info: JobInfo,
+        validation_config: Optional[ValidationConfig] = None,
     ):
-        """
-        Job instructions for the '/validate' endpoint.
-
-        Orchestration standard-arguments:
-        push -- (orchestration-standard) push `report` to host process
-        report -- (orchestration-standard) common report-object shared
-                  via `push`
-
-        Keyword arguments:
-        validation_config -- a `ValidationConfig`-object
-        """
+        """Job instructions for the '/validate' endpoint."""
+        # this enables re-usability in build-endpoint
+        if validation_config is None:
+            os.chdir(self.config.FS_MOUNT_POINT)
+            _validation_config = ValidationConfig.from_json(
+                info.config.request_body["validation"]
+            )
+            info.report.log.set_default_origin("IP Builder")
+        else:
+            _validation_config = validation_config
 
         # set progress info
-        report.progress.verbose = (
-            f"validating IP from '{validation_config.target.path}'"
+        info.report.progress.verbose = (
+            f"validating IP from '{_validation_config.target.path}'"
         )
-        report.log.log(
+        info.report.log.log(
             Context.INFO,
-            body=f"Validating IP '{validation_config.target.path}'."
+            body=f"Validating IP '{_validation_config.target.path}'.",
         )
-        push()
+        context.push()
 
         # Create validation_plugins with empty arguments
         validation_plugins = {
             plugin_name: {
                 "plugin": self.config.validation_plugins[plugin_name],
-                "args": {}
+                "args": {},
             }
             for plugin_name in [
                 "bagit-profile",
@@ -137,98 +134,112 @@ class ValidationView(services.OrchestratedView):
                 "significant-properties",
             ]
         }
-        if validation_config.bagit_profile_url:
+        if _validation_config.bagit_profile_url:
             # Register any profile url from request
             validation_plugins["bagit-profile"]["args"] = {
-                "profile_url": validation_config.bagit_profile_url
+                "profile_url": _validation_config.bagit_profile_url
             }
-        if validation_config.payload_profile_url:
+        if _validation_config.payload_profile_url:
             # Register any profile url from request
             validation_plugins["payload-structure"]["args"] = {
-                "profile_url": validation_config.payload_profile_url
+                "profile_url": _validation_config.payload_profile_url
             }
 
         # iterate validation plugins
         for config in validation_plugins.values():
             # collect plugin-info
             plugin = config["plugin"]
-            report.progress.verbose = f"calling plugin '{plugin.display_name}'"
-            report.log.log(
+            info.report.progress.verbose = (
+                f"calling plugin '{plugin.display_name}'"
+            )
+            info.report.log.log(
                 Context.INFO, body=f"Calling plugin '{plugin.display_name}'"
             )
-            push()
+            context.push()
 
             # configure execution context
             context = plugin.create_context(
-                report.progress.create_verbose_update_callback(
+                info.report.progress.create_verbose_update_callback(
                     plugin.display_name
                 ),
-                push,
+                context.push,
             )
-            report.data.details[plugin.name] = context.result
+            info.report.data.details[plugin.name] = context.result
 
             # run plugin logic
             plugin.get(
                 context,
                 **(
-                    {"path": str(validation_config.target.path)}
+                    {"path": str(_validation_config.target.path)}
                     | config["args"]
                 ),
             )
             # Copy all error and warning messages in the main log
-            report.log.merge(
+            info.report.log.merge(
                 context.result.log.pick(Context.ERROR, Context.WARNING)
             )
 
             if not context.result.success:
-                report.log.log(
+                info.report.log.log(
                     Context.ERROR,
                     body=f"Call to plugin '{plugin.display_name}' failed.",
                 )
-            push()
+            context.push()
 
         # eval and log
-        report.data.success = all(
+        info.report.data.success = all(
             p.success
-            for p in report.data.details.values()
+            for p in info.report.data.details.values()
             if isinstance(p, ValidationPluginResult)
         )
-        if report.data.success:
-            report.data.valid = all(
+        if info.report.data.success:
+            info.report.data.valid = all(
                 p.valid
-                for p in report.data.details.values()
+                for p in info.report.data.details.values()
                 if isinstance(p, ValidationPluginResult)
             )
-            if report.data.valid:
-                report.log.log(
+            if info.report.data.valid:
+                info.report.log.log(
                     Context.INFO,
                     body="Target is valid.",
                 )
-                self.load_identifiers(validation_config.target.path, report)
+                self.load_identifiers(
+                    _validation_config.target.path, info.report
+                )
             else:
                 plugins_with_errors = sum(
-                    not p.valid for p in report.data.details.values()
+                    not p.valid
+                    for p in info.report.data.details.values()
                     if isinstance(p, ValidationPluginResult)
                 )
-                report.log.log(
+                info.report.log.log(
                     Context.ERROR,
                     body=(
                         "Target is invalid (got errors from "
                         + f"{plugins_with_errors} "
                         + f"plugin{'s' if plugins_with_errors else ''})."
-                    )
+                    ),
                 )
         else:
             plugins_not_success = sum(
-                not p.success for p in report.data.details.values()
+                not p.success
+                for p in info.report.data.details.values()
                 if isinstance(p, ValidationPluginResult)
             )
-            report.log.log(
+            info.report.log.log(
                 Context.ERROR,
                 body=(
                     f"Validation incomplete ({plugins_not_success} "
                     f"plugin{'s' if plugins_not_success else ''} "
                     "gave bad response)."
-                )
+                ),
             )
-        push()
+        context.push()
+
+        # make callback; rely on _run_callback to push progress-update
+        # (only if plain validation)
+        if validation_config is None:
+            info.report.progress.complete()
+            self._run_callback(
+                context, info, info.config.request_body.get("callback_url")
+            )
