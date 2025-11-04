@@ -4,8 +4,7 @@
 |Flask-CORS (python library) | MIT License | Flask extension for handling CORS, [GitHub](https://github.com/corydolphin/flask-cors) |
 |PyYAML (python library) | MIT License | Support for YAML format, [GitHub](https://github.com/yaml/pyyaml) |
 |lxml (python library) | BSD License (BSD-3-Clause) | library for processing XML in Python, [GitHub](https://github.com/lxml/lxml) |
-|bagit (python library) | CC0 1.0 | BagIt implementation  (LOC), [GitHub](https://github.com/LibraryOfCongress/bagit-python) |
-|bagit-profile (python library) | CC0 1.0 | BagIt profile validation package, [GitHub](https://github.com/bagit-profiles/bagit-profiles-validator) |
+|bagit-utils (python library) | MIT License | library for BagIt-utilities, [GitHub](https://github.com/RichtersFinger/bagit-utils) |
 |data-plumber-http (python library) | MIT License | http-extension for data-plumber (validate/process request args), [GitHub](https://github.com/RichtersFinger/data-plumber-http) |
 |dill (python library)|BSD License (BSD-3-Clause)| library for (de-)serialization of python objects, [GitHub](https://github.com/uqfoundation/dill)|
 |pytest (python library) | MIT License | (dev) test framework, [GitHub](https://github.com/pytest-dev/pytest) |

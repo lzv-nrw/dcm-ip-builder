@@ -100,6 +100,7 @@ def test_build_report(
     build_sdk: dcm_ip_builder_sdk.BuildApi,
     testing_config,
     run_service,
+    test_bag_baginfo,
 ):
     """Test endpoints `/build-POST` and `/report-GET`."""
 
@@ -129,6 +130,13 @@ def test_build_report(
     ).is_dir()
     assert report.data.actual_instance.origin_system_id == "id"
     assert report.data.actual_instance.external_id == "0"
+    assert (
+        report.data.actual_instance.source_organization
+        == "https://d-nb.info/gnd/0"
+    )
+    assert sorted(
+        list(report.data.actual_instance.bag_info_metadata.keys())
+    ) == sorted(list(test_bag_baginfo.keys()))
 
 
 def test_build_wo_validate_report(
@@ -164,12 +172,15 @@ def test_build_wo_validate_report(
     ).is_dir()
     assert report.data.actual_instance.origin_system_id is None
     assert report.data.actual_instance.external_id is None
+    assert report.data.actual_instance.source_organization is None
+    assert report.data.actual_instance.bag_info_metadata is None
 
 
 def test_validation_report(
     validation_sdk: dcm_ip_builder_sdk.ValidationApi,
     testing_config,
     run_service,
+    test_bag_baginfo,
 ):
     """Test endpoints `/validate-POST` and `/report-GET`."""
 
@@ -189,6 +200,9 @@ def test_validation_report(
 
     assert report.data.actual_instance.success
     assert report.data.actual_instance.valid
+    assert report.data.actual_instance.origin_system_id == "id"
+    assert report.data.actual_instance.external_id == "0"
+    assert report.data.actual_instance.bag_info_metadata == test_bag_baginfo
 
 
 def test_build_report_404(

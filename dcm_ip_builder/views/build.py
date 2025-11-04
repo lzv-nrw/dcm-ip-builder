@@ -23,6 +23,7 @@ from dcm_ip_builder.models import (
     ValidationConfig,
 )
 from dcm_ip_builder.handlers import get_build_handler
+from dcm_ip_builder.components import Bag
 from dcm_ip_builder.views.validation import ValidationView
 
 
@@ -214,6 +215,8 @@ class BuildView(services.OrchestratedView):
             / self.config.META_DIRECTORY
             / self.config.DC_METADATA,
         ):
+            # Generate new tag-manifest files
+            Bag(info.report.data.path, load=False).set_tag_manifests()
             info.report.log.log(
                 Context.INFO,
                 body="DC-Metadata detected, '"

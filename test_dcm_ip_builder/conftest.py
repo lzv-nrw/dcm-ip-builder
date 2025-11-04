@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from bagit_utils import Bag
 from dcm_common.services.tests import (
     fs_setup, fs_cleanup, external_service, run_service, wait_for_report
 )
@@ -92,3 +93,8 @@ def _testing_config(file_storage):
             }
         }
     return TestingConfig
+
+
+@pytest.fixture(name="test_bag_baginfo")
+def _test_bag_baginfo(fixtures):
+    return Bag(fixtures / "test-bag").baginfo

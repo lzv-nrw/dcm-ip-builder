@@ -11,6 +11,7 @@ from dcm_common.util import (
     list_directory_content,
 )
 
+from dcm_ip_builder.components import Bag
 from .interface import (
     ValidationPlugin,
     ValidationPluginResult,
@@ -18,20 +19,8 @@ from .interface import (
 )
 
 
-def load_baginfo(path) -> dict[str, str | list[str]]:
-    result = {}
-    if Path(path).is_file():
-        for line in Path(path).read_text(encoding="utf-8").split("\n"):
-            if ":" not in line:
-                continue
-            field = tuple(
-                map(lambda s: s.strip(), line.split(":", maxsplit=1))
-            )
-            if field[0] in result:
-                result[field[0]] = [result[field[0]]]
-            else:
-                result[field[0]] = field[1]
-    return result
+def load_baginfo(path) -> dict[str, list[str]]:
+    return Bag(path, load=False).baginfo
 
 
 # define types for typehinting of typed dictionaries

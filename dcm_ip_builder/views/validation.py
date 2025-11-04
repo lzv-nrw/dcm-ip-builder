@@ -8,7 +8,7 @@ import os
 from uuid import uuid4
 
 from flask import Blueprint, jsonify, Response, request
-import bagit
+import bagit_utils
 from data_plumber_http.decorators import flask_handler, flask_args, flask_json
 from dcm_common import LoggingContext as Context
 from dcm_common import services
@@ -17,6 +17,7 @@ from dcm_common.orchestra import JobConfig, JobContext, JobInfo
 from dcm_ip_builder.handlers import get_validate_ip_handler
 from dcm_ip_builder.models import ValidationReport, ValidationConfig
 from dcm_ip_builder.plugins.validation import ValidationPluginResult
+from dcm_ip_builder.components import Bag
 
 
 class ValidationView(services.OrchestratedView):
@@ -81,18 +82,27 @@ class ValidationView(services.OrchestratedView):
         silently.
         """
         try:
-            baginfo = bagit.Bag(str(path)).info
-        except bagit.BagError as exc_info:
+            baginfo = Bag(path, load=False).baginfo
+        except bagit_utils.BagItError as exc_info:
             # log but do not change 'valid'-flag
             # (validation is done by custom request)
             report.log.log(
                 Context.ERROR,
-                body=f"Unable to load IP-identifiers: {exc_info}",
+                body=(
+                    "Unable to load IP-metadata from bag-info.txt: "
+                    + f"{exc_info}"
+                ),
             )
         else:
-            report.data.external_id = baginfo.get("External-Identifier")
-            report.data.origin_system_id = baginfo.get(
-                "Origin-System-Identifier"
+            report.data.baginfo_metadata = baginfo
+            (report.data.external_id,) = baginfo.get(
+                "External-Identifier", [None]
+            )
+            (report.data.origin_system_id,) = baginfo.get(
+                "Origin-System-Identifier", [None]
+            )
+            (report.data.source_organization,) = baginfo.get(
+                "Source-Organization", [None]
             )
 
     def validate(
@@ -174,9 +184,9 @@ class ValidationView(services.OrchestratedView):
                     | config["args"]
                 ),
             )
-            # Copy all error and warning messages in the main log
+            # Copy messages into main log
             info.report.log.merge(
-                context.result.log.pick(Context.ERROR, Context.WARNING)
+                context.result.log
             )
 
             if not context.result.success:

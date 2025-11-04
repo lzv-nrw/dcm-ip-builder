@@ -15,8 +15,10 @@ test_validation_result_json = get_model_serialization_test(
             {
                 "success": True,
                 "valid": True,
+                "source_organization": "c",
                 "origin_system_id": "a",
                 "external_id": "b",
+                "baginfo_metadata": {"d": ["1", "2"]},
                 "details": {"0": ValidationPluginResult()},
             },
         ),

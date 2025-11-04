@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.2.0] - 2025-11-04
+
+### Changed
+
+- migrated to `bagit-utils`-library (from `bagit` and `bagit-profile`)
+
+### Added
+
+- added source_organization and bag-info-metadata to `JobData` after successful validation
+
+### Fixed
+
+- fixed inclusion of the dc.xml file in the tag-manifest files
+
 ## [7.0.0] - 2025-09-09
 
 ### Changed

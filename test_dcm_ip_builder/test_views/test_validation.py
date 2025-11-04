@@ -8,6 +8,7 @@ from shutil import copytree
 import pytest
 
 from dcm_ip_builder import app_factory
+from dcm_ip_builder.models import ValidationReport
 
 
 @pytest.fixture(name="minimal_request_body")
@@ -19,7 +20,9 @@ def _minimal_request_body():
     }
 
 
-def test_validate_minimal(minimal_request_body, testing_config):
+def test_validate_minimal(
+    minimal_request_body, testing_config, test_bag_baginfo
+):
     """Test minimal functionality of /validate-POST endpoint."""
 
     app = app_factory(testing_config())
@@ -39,6 +42,11 @@ def test_validate_minimal(minimal_request_body, testing_config):
     assert report["data"]["valid"]
     assert report["data"]["originSystemId"] == "id"
     assert report["data"]["externalId"] == "0"
+    assert (
+        report["data"]["sourceOrganization"]
+        == "https://d-nb.info/gnd/2047974-8"
+    )
+    assert report["data"]["bagInfoMetadata"] == test_bag_baginfo
 
 
 @pytest.mark.parametrize(
@@ -70,6 +78,8 @@ def test_validate(minimal_request_body, testing_config, ip, valid):
     assert report["data"]["valid"] is valid
     assert ("originSystemId" in report["data"]) is valid
     assert ("externalId" in report["data"]) is valid
+    assert ("sourceOrganization" in report["data"]) is valid
+    assert ("bagInfoMetadata" in report["data"]) is valid
 
 
 def test_validate_with_argument(
@@ -127,19 +137,16 @@ Source-Organization: https://d-nb.info/gnd/2047974-8
     minimal_request_body["validation"]["target"]["path"] = path.name
     minimal_request_body["validation"]["BagItProfile"] = fake_profile_url
 
-    response = client.post("/validate", json=minimal_request_body)
-
-    assert response.status_code == 201
-    assert response.mimetype == "application/json"
-    token = response.json["value"]
+    token = client.post("/validate", json=minimal_request_body).json["value"]
 
     # wait until job is completed
     app.extensions["orchestra"].stop(stop_on_idle=True)
     report = client.get(f"/report?token={token}").json
-    from dcm_ip_builder.models import ValidationReport
 
     print(ValidationReport.from_json(report).log.fancy())
 
     assert report["data"]["valid"]
     assert "originSystemId" in report["data"]
     assert "externalId" in report["data"]
+    assert "sourceOrganization" in report["data"]
+    assert "bagInfoMetadata" in report["data"]

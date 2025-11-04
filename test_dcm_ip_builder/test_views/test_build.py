@@ -5,11 +5,11 @@ from shutil import copytree
 from uuid import uuid4
 
 import pytest
-from bagit import Bag
 from lxml import etree as et
 from dcm_common.util import list_directory_content
 
 from dcm_ip_builder import app_factory
+from dcm_ip_builder.components import Bag
 
 
 @pytest.fixture(name="minimal_request_body")
@@ -30,7 +30,7 @@ def _duplicate_ie(file_storage, testing_config):
     return duplicate
 
 
-def test_build_minimal(testing_config, minimal_request_body):
+def test_build_minimal(testing_config, minimal_request_body, test_bag_baginfo):
     """Test basic functionality of /build-POST endpoint."""
 
     app = app_factory(testing_config())
@@ -49,12 +49,17 @@ def test_build_minimal(testing_config, minimal_request_body):
 
     assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).is_dir()
     assert Bag(
-        str(testing_config.FS_MOUNT_POINT / report["data"]["path"])
-    ).is_valid()
+        testing_config.FS_MOUNT_POINT / report["data"]["path"], load=False
+    ).validate_format().valid
     assert report["data"]["valid"]
     assert report["data"]["success"]
     assert report["data"]["originSystemId"] == "id"
     assert report["data"]["externalId"] == "0"
+    assert report["data"]["sourceOrganization"] == "https://d-nb.info/gnd/0"
+    assert isinstance(report["data"]["bagInfoMetadata"], dict)
+    assert sorted(list(report["data"]["bagInfoMetadata"].keys())) == sorted(
+        list(test_bag_baginfo.keys())
+    )
     assert "BagIt-Validation-Plugin" in str(report["log"])
 
 
@@ -78,6 +83,8 @@ def test_build_minimal_no_validation(testing_config, minimal_request_body):
     assert "valid" not in report["data"]
     assert "originSystemId" not in report["data"]
     assert "externalId" not in report["data"]
+    assert "sourceOrganization" not in report["data"]
+    assert "bagInfoMetadata" not in report["data"]
     assert report["data"]["success"]
     assert "BagIt-Validation-Plugin" not in str(report["log"])
 
@@ -144,7 +151,9 @@ def test_build_dc_xml(ie, dcxml_exists, testing_config, minimal_request_body):
     report = client.get(f"/report?token={token}").json
 
     # output of attempt should exist
-    assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).is_dir()
+    output_path = testing_config.FS_MOUNT_POINT / report["data"]["path"]
+    assert output_path.is_dir()
+    output_bag = Bag(output_path)
     dcxml = (
         testing_config.FS_MOUNT_POINT
         / report["data"]["path"]
@@ -153,6 +162,10 @@ def test_build_dc_xml(ie, dcxml_exists, testing_config, minimal_request_body):
     )
     assert dcxml.is_file() == dcxml_exists
     if dcxml_exists:
+        assert all(
+            "meta/dc.xml" in output_bag.tag_manifests[tag]
+            for tag in output_bag.tag_manifests
+        )
         parser = et.XMLParser(remove_blank_text=True)
         src_tree = et.parse(dcxml, parser)
         title = src_tree.find(".//{http://purl.org/dc/elements/1.1/}title")
@@ -162,6 +175,10 @@ def test_build_dc_xml(ie, dcxml_exists, testing_config, minimal_request_body):
         assert report["data"]["success"]
         assert report["data"]["valid"]
     else:
+        assert not all(
+            "meta/dc.xml" in output_bag.tag_manifests[tag]
+            for tag in output_bag.tag_manifests
+        )
         assert not report["data"]["success"]
         assert not report["data"]["valid"]
 
@@ -208,17 +225,17 @@ def test_build_no_payload(
 
     # success depends on whether validation is performed
     assert report["data"]["success"] == (not validate_flag)
-    # output exists and is a valid 'bagit.Bag'
+    # output exists and is a valid 'bagit_utils.Bag'
     assert "path" in report["data"]
     assert (testing_config.FS_MOUNT_POINT / report["data"]["path"]).exists()
     assert Bag(
-        str(testing_config.FS_MOUNT_POINT / report["data"]["path"])
-    ).is_valid()
+        testing_config.FS_MOUNT_POINT / report["data"]["path"]
+    ).validate().valid
 
     # a warning is included in the log from the bag-builder
     assert len(report["log"]["WARNING"]) >= 1
     assert any(
-        "IE contains no payload files. Generating empty manifest files."
+        "Bag contains no payload."
         in m["body"]
         for m in report["log"]["WARNING"]
     )

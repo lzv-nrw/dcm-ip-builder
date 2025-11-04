@@ -5,12 +5,12 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-import bagit
+import bagit_utils
 from dcm_common import util, LoggingContext as Context
 from dcm_common.models.data_model import get_model_serialization_test
 
 from dcm_ip_builder.plugins import BagItBagBuilder, BagItPluginResult
-from dcm_ip_builder.plugins.validation.payload_structure import load_baginfo
+from dcm_ip_builder.components import Bag
 
 
 @pytest.fixture(scope="session", name="working_dir")
@@ -154,24 +154,18 @@ def test_get_minimal(
         test_ie / "bagit.txt"
     ).read_text(encoding="utf-8")
     split_content_bagit = content_bagit.split("BagIt-Version: ")
-    # Read the bag-info.txt
-    bag_info_dict = load_baginfo(
-        test_ie / "bag-info.txt"
-    )
 
     assert result.path is not None
     # Validate the bag version
     assert split_content_bagit[1].startswith(
         test_builder.info["bagit_version"]
     )
-    bag = bagit.Bag(str(result.path))
-    assert bag.version_info == (1, 0)
-    with pytest.deprecated_call():
-        assert bag.version == test_builder.info["bagit_version"]
-        assert bag._version == test_builder.info["bagit_version"]
-    # Ensure the removal and addition of entries in the bag_info
-    assert "Bagging-DateTime" in bag_info_dict
-    assert "Bagging-Date" not in bag_info_dict
+
+    bag = Bag(result.path, load=False)
+
+    # Check existence of defaults in bag-info.txt
+    assert "Bagging-DateTime" in bag.baginfo
+    assert "Payload-Oxum" in bag.baginfo
 
 
 @pytest.mark.parametrize(
@@ -189,7 +183,7 @@ def test_get_diff_algorithms_for_manifests(
     bag_info,
     manifest_algorithms,
     tagmanifest_algorithms,
-    inplace
+    inplace,
 ):
     """
     Test making a bag with different algorithms
@@ -212,7 +206,6 @@ def test_get_diff_algorithms_for_manifests(
             src=str(test_ie),
             bag_info=bag_info.copy(),
         )
-        bag_path = test_ie
     else:
         result = test_builder.get(
             None,
@@ -220,46 +213,19 @@ def test_get_diff_algorithms_for_manifests(
             bag_info=bag_info.copy(),
             dest=str(dest)
         )
-        bag_path = dest
-
-    # Create expected manifest files
-    algorithms = manifest_algorithms
-    expected_manifests = [
-        "".join(["manifest-", checksum, ".txt"])
-        for checksum in algorithms
-    ]
-    algorithms = tagmanifest_algorithms
-    expected_tagmanifests = [
-        "".join(["tagmanifest-", checksum, ".txt"])
-        for checksum in algorithms
-    ]
-
-    # Find existing manifest files
-    existing_manifests = [
-        p.name for p in util.list_directory_content(
-            bag_path,
-            pattern="*",
-            condition_function=lambda p: p.name.startswith("manifest-")
-        )
-    ]
-    existing_tagmanifests = [
-        p.name for p in util.list_directory_content(
-            bag_path,
-            pattern="*",
-            condition_function=lambda p: p.name.startswith("tagmanifest-")
-        )
-    ]
 
     assert result.success
     assert result.path is not None
-    # The bag is valid for the bagit library
-    assert bagit.Bag(str(result.path)).is_valid(
-        fast=False, completeness_only=False
-    )
+    if inplace:
+        assert result.path == test_ie
+    else:
+        assert result.path == dest
+    bag = Bag(result.path)
+    assert bag.validate_format().valid
     # Assert that only the expected_manifests and expected_tag_manifests
     # were generated
-    assert set(expected_manifests) == set(existing_manifests)
-    assert set(expected_tagmanifests) == set(existing_tagmanifests)
+    assert set(manifest_algorithms) == set(bag.manifests.keys())
+    assert set(tagmanifest_algorithms) == set(bag.tag_manifests.keys())
 
 
 def test_get_inplace(
@@ -297,8 +263,10 @@ def test_get_inplace(
         ("manifest", "tagmanifest"))
     ]
     # Assert the bag_info is contained in bag-info.txt
-    bag_info_dict = load_baginfo(test_ie / "bag-info.txt")
-    assert bag_info_dict.items() >= bag_info.items()
+    assert (
+        len(Bag(test_ie, load=False).baginfo.items())
+        >= len(bag_info.items())
+    )
 
 
 def test_get_inplace_False(
@@ -436,10 +404,7 @@ def test_get_no_meta_folder(
 
     assert result.success
     assert result.path is not None
-    # The bag is valid for the bagit library
-    assert bagit.Bag(str(result.path)).is_valid(
-        fast=False, completeness_only=False
-    )
+    assert Bag(result.path).validate_format().valid
 
 
 def test_get_additional_baginfo_from_builder(
@@ -469,20 +434,20 @@ def test_get_additional_baginfo_from_builder(
     )
 
     # Load the bag-info.txt
-    bag_info_bag = load_baginfo(test_ie / "bag-info.txt")
+    bag_info_bag = Bag(test_ie, load=False).baginfo
 
     assert result.success
     assert result.path is not None
     # Compare bag_info_bag with bag_info_source
-    # Just three additional keys, namely Bag-Software-Agent,
-    # Bagging-DateTime and Payload-Oxum.
+    # Just two additional keys, namely "Payload-Oxum", "Bagging-DateTime"
     assert set(bag_info_bag.keys()) - set(bag_info.keys()) == {
-        "Bag-Software-Agent", "Payload-Oxum", "Bagging-DateTime"
+        "Payload-Oxum", "Bagging-DateTime"
     }
     # All other entries are equal
-    assert all(
-        bag_info_bag[key] == value for key, value in bag_info.items()
-    )
+    for key, value in bag_info.items():
+        assert (
+            bag_info_bag[key] == value if isinstance(value, list) else [value]
+        )
 
 
 def test_get_additional_root_folder(
@@ -556,7 +521,7 @@ def test_get_no_payload(
     assert len(result.log[Context.WARNING]) == 1
 
 
-def test_get_bagit_validate_error(
+def test_get_bagit_utils_build_error(
     working_dir,
     test_ie,
     bag_info,
@@ -564,7 +529,8 @@ def test_get_bagit_validate_error(
     tagmanifests
 ):
     """
-    Test making a bag when the 'bagit.Bag.validate' method raises an error.
+    Test making a bag when the 'bagit_utils.Bag.build_from' method
+    raises an error.
     """
 
     # Initiate the BagBuilder
@@ -574,20 +540,54 @@ def test_get_bagit_validate_error(
         tagmanifests=tagmanifests
     )
 
-    # Make a bag and fake return of 'bagit.Bag.validate'
-    bagit_validate_exception = bagit.BagError('Some bagit.BagError.')
+    # Make a bag and fake return of 'bagit_utils.Bag.build_from'
+    bagit_utils_exception = bagit_utils.BagItError(
+        "Some bagit_utils.BagItError."
+    )
     with mock.patch(
-        "dcm_ip_builder.plugins.bag_builder.bagit.Bag.validate",
-        side_effect=bagit_validate_exception,
+        "dcm_ip_builder.plugins.bag_builder.Bag.build_from",
+        side_effect=bagit_utils_exception,
     ):
         result = test_builder.get(
-            None,
-            src=str(test_ie),
-            bag_info=bag_info.copy()
+            None, src=str(test_ie), bag_info=bag_info.copy()
         )
 
     assert result.success is False
     assert result.path is None
-    assert "bagit.Bag.validate raised an error: " + str(
-        bagit_validate_exception
-    ) in str(result.log[Context.ERROR])
+    assert str(bagit_utils_exception) in str(result.log[Context.ERROR])
+
+
+def test_get_bagit_utils_validate_error(
+    working_dir,
+    test_ie,
+    bag_info,
+    manifests,
+    tagmanifests
+):
+    """
+    Test validating a bag when the 'bagit_utils.Bag.validate_format'
+    method returns error in report.
+    """
+
+    # Initiate the BagBuilder
+    test_builder = BagItBagBuilder(
+        working_dir=working_dir,
+        manifests=manifests,
+        tagmanifests=tagmanifests
+    )
+
+    # repeat with validate_format
+    with mock.patch(
+        "dcm_ip_builder.plugins.bag_builder.Bag.validate_format",
+        return_value=bagit_utils.common.ValidationReport(
+            False,
+            [bagit_utils.common.Issue("error", "BagIt-validation error.")],
+        ),
+    ):
+        result = test_builder.get(
+            None, src=str(test_ie), bag_info=bag_info.copy()
+        )
+
+    assert result.success is False
+    assert result.path is None
+    assert "BagIt-validation error." in str(result.log[Context.ERROR])
