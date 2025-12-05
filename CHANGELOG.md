@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.6.0] - 2025-12-05
+
+### Changed
+
+- updated static profile to version 0.7.0
+- changed default profile for building an IP
+- removed payload-structure validation-plugin and moved its functionality to bagit-profile validation-plugin
+
+### Added
+
+- introduced BagIt-profile store to give control over accepted profiles for validation
+
 ## [7.2.0] - 2025-11-04
 
 ### Changed

@@ -17,12 +17,6 @@ class ValidationConfig(DataModel):
 
     Keyword arguments:
     target -- `Target`-object pointing to IE to be validated
-    bagit_profile_url -- url pointing to BagIt-Profile
-                         (default None)
-    payload_profile_url -- url pointing to BagIt-Payload-Profile
-                           (default None)
     """
 
     target: Target
-    bagit_profile_url: Optional[str] = None
-    payload_profile_url: Optional[str] = None

@@ -3,6 +3,7 @@
 from pathlib import Path
 from shutil import copytree
 from uuid import uuid4
+from copy import deepcopy
 
 import pytest
 from lxml import etree as et
@@ -242,6 +243,42 @@ def test_build_no_payload(
 
     if validate_flag:
         assert report["data"]["valid"] is False
-        assert report["data"]["details"]["bagit-profile"]["valid"]
+        assert report["data"]["details"]["bagit-profile"]["valid"] is False
         assert report["data"]["details"]["significant-properties"]["valid"]
-        assert report["data"]["details"]["payload-structure"]["valid"] is False
+
+
+def test_build_profile_arg(testing_config, minimal_request_body,):
+    """
+    Test functionality of /build-POST endpoint with a `BagItProfile`
+    argument in the request.
+    """
+
+    app = app_factory(testing_config())
+    client = app.test_client()
+
+    # submit job
+    request_profile_uri = "requested-profile"
+    request_body = deepcopy(minimal_request_body)
+    request_body["build"] = request_body["build"] | {
+        "BagItProfile": request_profile_uri,
+        # switch off validation because 'request_profile_uri' is unknown
+        "validate": False,
+    }
+    response = client.post("/build", json=request_body)
+
+    assert response.status_code == 201
+    assert response.mimetype == "application/json"
+    token = response.json["value"]
+
+    # wait until job is completed
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    report = client.get(f"/report?token={token}").json
+
+    assert report["data"]["success"]
+    output_bag = Bag(
+        testing_config.FS_MOUNT_POINT / report["data"]["path"], load=False
+    )
+    assert output_bag.validate_format().valid
+    assert output_bag.baginfo["BagIt-Profile-Identifier"] == [
+        request_profile_uri
+    ]

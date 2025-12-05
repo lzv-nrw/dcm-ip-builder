@@ -2,13 +2,14 @@
 
 from pathlib import Path
 from copy import deepcopy
-from uuid import uuid4
 from shutil import copytree
+from uuid import uuid4
+from json import dumps
 
 import pytest
 
 from dcm_ip_builder import app_factory
-from dcm_ip_builder.models import ValidationReport
+from dcm_ip_builder.components import Bag
 
 
 @pytest.fixture(name="minimal_request_body")
@@ -18,6 +19,14 @@ def _minimal_request_body():
             "target": {"path": str("test-bag")},
         }
     }
+
+
+@pytest.fixture(name="duplicate_bag")
+def _duplicate_bag(file_storage, testing_config):
+    """Duplicates "test-bag" to another directory."""
+    duplicate = testing_config.FS_MOUNT_POINT / str(uuid4())
+    copytree(file_storage / "test-bag", duplicate)
+    return duplicate
 
 
 def test_validate_minimal(
@@ -82,71 +91,97 @@ def test_validate(minimal_request_body, testing_config, ip, valid):
     assert ("bagInfoMetadata" in report["data"]) is valid
 
 
-def test_validate_with_argument(
-    minimal_request_body,
-    testing_config,
-    fixtures,
-    file_storage,
-    run_service,
+@pytest.mark.parametrize(
+    ("profile_in_store", "profile_online", "success"),
+    [
+        (True, True, True),
+        (True, False, True),
+        (False, True, True),
+        (False, False, False)
+    ]
+)
+def test_load_bagit_profile_from_bag(
+    file_storage, duplicate_bag, testing_config,
+    profile_in_store, profile_online, success, run_service, test_profile
 ):
     """
-    Test /validate-POST endpoint with a plugin-argument in the request.
+    Test functionality of /validate-POST endpoint when loading
+    the bagit profile from the bag.
     """
-    # fake profile server
-    fake_profile_url = "http://localhost:8081/profile.json"
-    fake_profile = deepcopy(testing_config.BAGIT_PROFILE)
-    fake_profile["BagIt-Profile-Info"][
+
+    bagit_profile_uri = "http://localhost:5555/bagit_profile.json"
+    # manipulate bag to write custom "BagIt-Profile-Identifier"
+    input_bag = Bag(duplicate_bag)
+    input_bag.set_baginfo(
+        input_bag.baginfo
+        | {
+            "BagIt-Profile-Identifier": [
+                bagit_profile_uri
+            ]
+        }
+    )
+    # manipulate test_profile to write custom "BagIt-Profile-Identifier"
+    test_profile["BagIt-Profile-Info"][
         "BagIt-Profile-Identifier"
-    ] = fake_profile_url
-    fake_payload_profile_url = "http://localhost:8081/payload-profile.json"
-    fake_payload_profile = deepcopy(testing_config.PAYLOAD_PROFILE)
-    fake_payload_profile["BagIt-Payload-Profile-Info"][
-        "BagIt-Payload-Profile-Identifier"
-    ] = fake_payload_profile_url
-    run_service(
-        routes=[
-            ("/profile.json", lambda: fake_profile, ["GET"]),
-            ("/payload-profile.json", lambda: fake_payload_profile, ["GET"]),
-        ],
-        port=8081,
-    )
+    ] = bagit_profile_uri
 
-    # create fake ip ip
-    path = file_storage / str(uuid4())
-    copytree(fixtures / "test-bag", path)
-    (path / "bag-info.txt").write_text(
-        f"""Bag-Software-Agent: dcm-ip-builder v0.0.0
-BagIt-Payload-Profile-Identifier: {fake_payload_profile_url}
-BagIt-Profile-Identifier: {fake_profile_url}
-Bagging-DateTime: 2024-03-27T15:22:38+01:00
-DC-Creator: Max Muster, et al.
-DC-Rights: https://creativecommons.org/licenses/by-nd/3.0/de/
-DC-Title: Some title
-External-Identifier: 0
-Origin-System-Identifier: id
-Payload-Oxum: 2222.2
-Source-Organization: https://d-nb.info/gnd/2047974-8
-""",
-        encoding="utf-8",
-    )
+    if profile_in_store:
+        # write test_profile in profiles source
+        target = file_storage / "profiles" / "test-profile.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(dumps(test_profile), encoding="utf-8")
 
-    app = app_factory(testing_config())
+        class ThisTestingConfig(testing_config):
+            FS_MOUNT_POINT = file_storage
+            LOAD_BAGIT_PROFILE_FROM_BAG = True
+            PROFILES_SRC = f"[{dumps(test_profile)}]"
+    else:
+        class ThisTestingConfig(testing_config):
+            LOAD_BAGIT_PROFILE_FROM_BAG = True
+
+    app = app_factory(ThisTestingConfig())
     client = app.test_client()
 
-    # submit job
-    minimal_request_body["validation"]["target"]["path"] = path.name
-    minimal_request_body["validation"]["BagItProfile"] = fake_profile_url
+    if profile_online:
+        # create profile-url server
+        run_service(
+            routes=[
+                ("/bagit_profile.json", lambda: (test_profile, 200), ["GET"])
+            ],
+            port=5555,
+        )
 
-    token = client.post("/validate", json=minimal_request_body).json["value"]
+    # submit job
+    response = client.post(
+        "/validate",
+        json={
+            "validation": {
+                "target": {
+                    "path": str(duplicate_bag.relative_to(file_storage))
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.mimetype == "application/json"
+    token = response.json["value"]
 
     # wait until job is completed
     app.extensions["orchestra"].stop(stop_on_idle=True)
     report = client.get(f"/report?token={token}").json
 
-    print(ValidationReport.from_json(report).log.fancy())
-
-    assert report["data"]["valid"]
-    assert "originSystemId" in report["data"]
-    assert "externalId" in report["data"]
-    assert "sourceOrganization" in report["data"]
-    assert "bagInfoMetadata" in report["data"]
+    if success:
+        assert report["data"]["success"]
+        assert report["data"]["valid"]
+        assert report["data"]["bagInfoMetadata"][
+            "BagIt-Profile-Identifier"
+        ] == [bagit_profile_uri]
+    else:
+        assert report["data"]["success"] is False
+        assert len(report["log"]["ERROR"]) >= 1
+        assert any(
+            "Unable to load profile"
+            in m["body"]
+            for m in report["log"]["ERROR"]
+        )

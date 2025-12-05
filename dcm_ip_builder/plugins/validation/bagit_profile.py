@@ -1,6 +1,6 @@
 """BagIt Profile validation-plugin."""
 
-from typing import Optional, Mapping
+from typing import Mapping, Optional
 from pathlib import Path
 
 import bagit_utils
@@ -9,9 +9,9 @@ from dcm_common.plugins import (
     Signature
 )
 from dcm_common.logger import LoggingContext as Context
-from dcm_common.util import NestedDict
+from dcm_common.util import NestedDict, list_directory_content
 
-from dcm_ip_builder.components import Bag
+from dcm_ip_builder.components import Bag, BagItProfileValidator
 from .interface import (
     ValidationPlugin,
     ValidationPluginResult,
@@ -19,24 +19,45 @@ from .interface import (
 )
 
 
-class BagItProfileValidator(bagit_utils.BagItProfileValidator):
-    """
-    BagIt-profiles' 'Bag-Info'-items' description fields are used as
-    regex. This wrapper converts the profile to use the base-classes
-    regex-validation.
-    """
+class BagValidator(bagit_utils.BagValidator):
+    """Customized `bagit_utils.BagValidator`."""
     @classmethod
-    def load_profile(
+    def custom_validation_hook(
+        # pylint: disable=unused-argument
         cls,
-        profile: Optional[Mapping] = None,
-        profile_src: Optional[str | Path] = None,
-    ) -> dict:
-        profile = super().load_profile(profile, profile_src)
-        # map baginfo-description-fields into regex-fields
-        for baginfo_item in profile.get("Bag-Info", {}).values():
-            if "description" in baginfo_item:
-                baginfo_item["regex"] = baginfo_item["description"]
-        return profile
+        bag: Bag,
+        profile: Mapping,
+    ) -> bagit_utils.common.ValidationReport:
+        """Hook for custom validation steps."""
+
+        # -- Validate that files in the payload directory do not differ by
+        # only their capitalization.
+        report = bagit_utils.common.ValidationReport(True)
+
+        # list files in payload dir
+        payload_files = list_directory_content(
+            bag.path / "data",
+            pattern="**/*",
+            condition_function=lambda p: (p.is_file()),
+        )
+        # iterate files and check for multiple occurrences for
+        # filename.lower()
+        checked: dict[str, str] = {}
+        for file in payload_files:
+            file_relative = file.relative_to(bag.path)
+            file_lower = str(file_relative).lower()
+            if file_lower in checked:
+                report.valid = False
+                report.issues.append(
+                    bagit_utils.common.Issue(
+                        "error",
+                        f"Files '{file_relative}' and '{checked[file_lower]}' "
+                        "only differ in their capitalization.",
+                    )
+                )
+            else:
+                checked[file_lower] = str(file_relative)
+        return report
 
 
 class BagItProfilePlugin(ValidationPlugin):
@@ -50,10 +71,15 @@ class BagItProfilePlugin(ValidationPlugin):
     get-method by supplying a path to the bag.
 
     Keyword arguments:
-    default_profile_url -- file path or url to the desired
-                           default BagIt-profile.
-    default_profile -- already instantiated BagIt-profile as dictionary
-                       (default None)
+    supported_profiles -- mapping of URI and JSON-profile with the supported
+                          BagIt-profiles.
+                          Should have a match with the value of the field
+                          'BagIt-Profile-Identifier' of the baginfo metadata
+                          (default None leads to {})
+    load_bagit_profile_from_bag -- whether to load the BagIt-Profile from bag
+                                   if the URI is not included in the
+                                   `supported_profiles`
+                                   (default False)
     """
 
     _NAME = "bagit-profile"
@@ -69,21 +95,20 @@ class BagItProfilePlugin(ValidationPlugin):
 
     def __init__(
         self,
-        default_profile_url: str,
-        default_profile: Optional[NestedDict] = None,
+        supported_profiles: Optional[dict[str, NestedDict]] = None,
+        load_bagit_profile_from_bag: bool = False,
         **kwargs,
     ) -> None:
 
         super().__init__(**kwargs)
-
-        self.default_profile_url = str(default_profile_url)
-        self.default_profile = default_profile
-        self.default_bagit_profile = BagItProfileValidator.load_profile(
-            profile_src=(
-                default_profile_url if default_profile is None else None
-            ),
-            profile=default_profile,
-        )
+        if supported_profiles is None and load_bagit_profile_from_bag is False:
+            raise ValueError(
+                "Failed to initialize plugin: either 'supported_profiles' "
+                + "should be defined or 'load_bagit_profile_from_bag' should "
+                + "be 'True'."
+            )
+        self.supported_profiles = supported_profiles
+        self.load_bagit_profile_from_bag = load_bagit_profile_from_bag
 
     @classmethod
     def _validate_more(cls, kwargs):
@@ -133,68 +158,80 @@ class BagItProfilePlugin(ValidationPlugin):
             context.push()
             return
 
-        # load/validate profile
-        bagit_profile = None
-        bagit_profile_url = kwargs.get(
-            # plugin-arg has priority
-            "profile_url",
-            # use baginfo as secondary
-            bag.baginfo.get("BagIt-Profile-Identifier", [None])[0],
-        )
+        # load profile
+        bagit_profile_uri = bag.baginfo.get(
+            "BagIt-Profile-Identifier", [None]
+        )[0]
 
-        # non-default
-        if bagit_profile_url is not None:
+        if bagit_profile_uri is None:
+            context.result.log.log(
+                Context.ERROR,
+                body=(
+                    "The tag 'BagIt-Profile-Identifier' is missing from "
+                    + "the baginfo metadata."
+                ),
+            )
+            context.result.success = False
+            context.push()
+            return context.result
+
+        if (
+            self.supported_profiles is not None
+            and bagit_profile_uri in self.supported_profiles
+        ):
             context.result.log.log(
                 Context.INFO,
-                body=f"Loading profile from '{bagit_profile_url}'.",
+                body=f"Loading profile from '{bagit_profile_uri}'.",
             )
             context.set_progress("loading profile")
             context.push()
-            try:
-                bagit_profile = bagit_utils.BagItProfileValidator.load_profile(
-                    profile_src=bagit_profile_url,
-                )
-            # pylint: disable=broad-exception-caught
-            except Exception as exc_info:
+            bagit_profile = self.supported_profiles[bagit_profile_uri]
+        else:
+            if self.load_bagit_profile_from_bag:
+                try:
+                    context.result.log.log(
+                        Context.INFO,
+                        body=f"Loading profile from '{bagit_profile_uri}'.",
+                    )
+                    context.set_progress("loading profile")
+                    context.push()
+                    bagit_profile = BagItProfileValidator.load_profile(
+                        profile_src=bagit_profile_uri,
+                    )
+                # pylint: disable=broad-exception-caught
+                except Exception as exc_info:
+                    context.result.log.log(
+                        Context.ERROR,
+                        body=(
+                            f"Unable to load profile '{bagit_profile_uri}': "
+                            + f"{exc_info}"
+                        ),
+                    )
+                    context.result.success = False
+                    context.set_progress("failure")
+                    context.push()
+                    return context.result
+            else:
                 context.result.log.log(
                     Context.ERROR,
                     body=(
-                        f"Unable to load profile '{bagit_profile_url}': "
-                        + f"{exc_info}"
+                        f"The profile '{bagit_profile_uri}' is not supported. "
+                        + "Consider updating the configuration of the IP "
+                        + "Builder application or rebuild the IP from the "
+                        + "source IE using one of the supported profiles: "
+                        + f"{list(self.supported_profiles.keys())}."
                     ),
                 )
-                context.set_progress("failure")
+                context.result.success = False
                 context.push()
-
-                # if a specific profile has been requested, this counts
-                # as failed
-                if "profile_url" in kwargs:
-                    context.result.success = False
-                    context.push()
-                    return context.result
-
-        # default
-        if bagit_profile is None:
-            bagit_profile = self.default_bagit_profile
-            context.result.log.log(
-                Context.INFO,
-                body=(
-                    "Using the default BagIt-profile "
-                    f"'{self.default_profile_url}'."
-                ),
-            )
-            context.push()
+                return context.result
 
         # run validation
         context.result.log.log(Context.INFO, body=f"Validating Bag '{path}'.")
         context.set_progress(f"validating bag '{path}'")
         context.push()
 
-        report = bagit_utils.BagValidator.validate_once(
-            bag, profile=bagit_profile
-        )
-
-        # evaluate results
+        report = BagValidator.validate_once(bag, profile=bagit_profile)
         for issue in report.issues:
             match issue.level:
                 case "error":
@@ -206,6 +243,8 @@ class BagItProfilePlugin(ValidationPlugin):
             context.result.log.log(
                 issue_context, body=issue.message
             )
+
+        # evaluate results
         if report.valid:
             context.result.valid = True
             context.result.log.log(

@@ -207,15 +207,32 @@ pytest -v -s
 
 ## Environment/Configuration
 Service-specific environment variables are
-* `BAGIT_PROFILE_URL` [DEFAULT "./dcm_ip_builder/static/bagit_profile.json"]: url to bagit profile in JSON-format
-* `PAYLOAD_PROFILE_URL` [DEFAULT "./dcm_ip_builder/static/payload_profile.json"]: url to bagit payload profile in JSON-format
-* `MANIFESTS` [DEFAULT '["sha256", "sha512"]']: list with the algorithms to be used for the manifest files when building an IP;
+
+### Build
+* `DEFAULT_BAGIT_PROFILE` [DEFAULT "https://github.com/lzv-nrw/spec-information-package/raw/refs/tags/0.7.0/profiles/lzvnrw_bagit_profile.json"]: URI of a default bagit profile; used if the request does not contain the argument `BagItProfile`
+* `MANIFESTS` [DEFAULT '["sha256", "sha512"]']: list with the algorithms to be used for the manifest files;
 possible values: "md5", "sha1", "sha256" and "sha512"
-* `TAG_MANIFESTS` [DEFAULT '["sha256", "sha512"]']: list with the algorithms to be used for the tag-manifest files when building an IP;
+* `TAG_MANIFESTS` [DEFAULT '["sha256", "sha512"]']: list with the algorithms to be used for the tag-manifest files;
 possible values: "md5", "sha1", "sha256" and "sha512"
 * `ALLOW_GENERIC_MAPPING` [DEFAULT 0]: whether the generic mapping-plugins are loaded
 * `ADDITIONAL_MAPPING_PLUGINS_DIR` [DEFAULT null]: directory with external mapping plugins to be loaded (see also [this explanation](#additional-plugins))
 * `USE_DEMO_PLUGIN` [DEFAULT 0]: whether the demo mapping-plugin is loaded
+
+### Validation
+#### BagIt-Profile
+* `PROFILES_SRC` [DEFAULT "dcm_ip_builder/static"]: array of profile configurations as JSON or path to a directory containing (UTF-8 encoded) JSON-files (used to found a match with the URI in the bag metadata); every entry of that array needs to include the following field:
+  ```json
+  {
+    "BagIt-Profile-Info": {
+        "BagIt-Profile-Identifier": "<unique profile URI>"
+    }
+  }
+  ```
+* `LOAD_BAGIT_PROFILE_FROM_BAG` [DEFAULT 0]: whether the BagIt-Profile is loaded from the URI in the bag metadata
+#### Significant Properties
+* `VALIDATION_SIGPROPXML_XSD` [DEFAULT "https://www.loc.gov/standards/premis/premis.xsd"]: XSD-document to be validated against
+* `VALIDATION_SIGPROPXML_XML_SCHEMA_VERSION` [DEFAULT "1.0"]: XML schemas version used by `VALIDATION_SIGPROPXML_XSD`
+* `VALIDATION_SIGPROPXML_NAME` [DEFAULT "premis.xml schema v3.0"]: verbose schema name for validation with `VALIDATION_SIGPROPXML_XSD` (used in logs)
 
 Additionally this service provides environment options for
 * `BaseConfig`,

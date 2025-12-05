@@ -21,14 +21,11 @@ class BuildConfig(DataModel):
     mapping_plugin -- mapping-plugin configuration
     validate -- whether to run validation after build
                 (default True)
-    bagit_profile_url -- url pointing to BagIt-Profile
+    bagit_profile_uri -- URI of a BagIt-Profile
                          (default None)
-    payload_profile_url -- url pointing to BagIt-Payload-Profile
-                           (default None)
     """
 
     target: Target
     mapping_plugin: PluginConfig
     validate: bool = True
-    bagit_profile_url: Optional[str] = None
-    payload_profile_url: Optional[str] = None
+    bagit_profile_uri: Optional[str] = None

@@ -168,12 +168,8 @@ class BuildView(services.OrchestratedView):
                     f"dcm-ip-builder v{version('dcm-ip-builder')}"
                 ),
                 "BagIt-Profile-Identifier": (
-                    build_config.bagit_profile_url
-                    or self.config.BAGIT_PROFILE_URL
-                ),
-                "BagIt-Payload-Profile-Identifier": (
-                    build_config.payload_profile_url
-                    or self.config.PAYLOAD_PROFILE_URL
+                    build_config.bagit_profile_uri
+                    or self.config.DEFAULT_BAGIT_PROFILE
                 ),
             }
         )
@@ -239,8 +235,6 @@ class BuildView(services.OrchestratedView):
                 info,
                 validation_config=ValidationConfig(
                     target=Target(path=info.report.data.path),
-                    bagit_profile_url=build_config.bagit_profile_url,
-                    payload_profile_url=build_config.payload_profile_url,
                 ),
             )
             if not info.report.data.valid:

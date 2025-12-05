@@ -140,20 +140,9 @@ class ValidationView(services.OrchestratedView):
             }
             for plugin_name in [
                 "bagit-profile",
-                "payload-structure",
                 "significant-properties",
             ]
         }
-        if _validation_config.bagit_profile_url:
-            # Register any profile url from request
-            validation_plugins["bagit-profile"]["args"] = {
-                "profile_url": _validation_config.bagit_profile_url
-            }
-        if _validation_config.payload_profile_url:
-            # Register any profile url from request
-            validation_plugins["payload-structure"]["args"] = {
-                "profile_url": _validation_config.payload_profile_url
-            }
 
         # iterate validation plugins
         for config in validation_plugins.values():

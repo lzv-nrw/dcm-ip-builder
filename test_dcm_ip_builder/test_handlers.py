@@ -26,36 +26,8 @@ def _validate_ip_handler(fixtures):
                 {"validation": {"target": {"path": "test-bag_"}}},
                 404,
             ),
-            (  # no profiles
+            (
                 {"validation": {"target": {"path": "test-bag"}}},
-                Responses.GOOD.status,
-            ),
-            (  # BagItProfile arg
-                {
-                    "validation": {
-                        "target": {"path": "test-bag"},
-                        "BagItProfile": "request_bagit_profile",
-                    }
-                },
-                Responses.GOOD.status,
-            ),
-            (  # BagItPayloadProfile arg
-                {
-                    "validation": {
-                        "target": {"path": "test-bag"},
-                        "BagItPayloadProfile": "request_payload_profile",
-                    }
-                },
-                Responses.GOOD.status,
-            ),
-            (  # with both profile args
-                {
-                    "validation": {
-                        "target": {"path": "test-bag"},
-                        "BagItProfile": "request_bagit_profile",
-                        "BagItPayloadProfile": "request_payload_profile",
-                    }
-                },
                 Responses.GOOD.status,
             ),
         ]
@@ -114,23 +86,23 @@ def _build_handler(fixtures):
             404
         ),
         (
-            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}},
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "BagItProfile": "bagit-uri"}},
             Responses.GOOD.status
         ),
         (  # validate
-            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "validate": False}},
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "BagItProfile": "bagit-uri", "validate": False}},
             Responses.GOOD.status
         ),
         (  # token
-            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}, "token": None},
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "BagItProfile": "bagit-uri"}, "token": None},
             422
         ),
         (
-            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}, "token": "non-uuid"},
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "BagItProfile": "bagit-uri"}, "token": "non-uuid"},
             422
         ),
         (
-            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}}, "token": "37ee72d6-80ab-4dcd-a68d-f8d32766c80d"},
+            {"build": {"target": {"path": "test-bag"}, "mappingPlugin": {"plugin": "demo", "args": {}}, "BagItProfile": "bagit-uri"}, "token": "37ee72d6-80ab-4dcd-a68d-f8d32766c80d"},
             Responses.GOOD.status
         ),
     ]),

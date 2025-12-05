@@ -40,15 +40,7 @@ def get_build_handler(
                     Property("validate", default=True): Boolean(),
                     Property(
                         "BagItProfile",
-                        name="bagit_profile_url",
-                        # default for build is set in view function,
-                        # default for validation is set in plugin instantiation
-                    ): Url(),
-                    Property(
-                        "BagItPayloadProfile",
-                        name="payload_profile_url",
-                        # default for build is set in view function,
-                        # default for validation is set in plugin instantiation
+                        name="bagit_profile_uri",
                     ): Url(),
                 },
                 accept_only=[
@@ -56,7 +48,6 @@ def get_build_handler(
                     "mappingPlugin",
                     "validate",
                     "BagItProfile",
-                    "BagItPayloadProfile",
                 ],
             ),
             Property("token"): UUID(),
@@ -86,18 +77,8 @@ def get_validate_ip_handler(cwd: Path):
                         },
                         accept_only=["path"],
                     ),
-                    Property(
-                        "BagItProfile",
-                        name="bagit_profile_url",
-                        # default is set in plugin instantiation
-                    ): Url(),
-                    Property(
-                        "BagItPayloadProfile",
-                        name="payload_profile_url",
-                        # default is set in plugin instantiation
-                    ): Url(),
                 },
-                accept_only=["target", "BagItProfile", "BagItPayloadProfile"],
+                accept_only=["target"],
             ),
             Property("token"): UUID(),
             Property("callbackUrl", name="callback_url"): Url(

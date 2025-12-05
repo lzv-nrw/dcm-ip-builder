@@ -12,9 +12,6 @@ test_validation_config_json = get_model_serialization_test(
             (Target(Path(".")),), {}
         ),
         (
-            (Target(Path(".")), "bagit_profile_url", "payload_profile_url"), {}
-        ),
-        (
             (), {"target": Target(Path("."))}
         ),
     )

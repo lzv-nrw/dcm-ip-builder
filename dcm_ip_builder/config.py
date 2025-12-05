@@ -8,7 +8,6 @@ from importlib.metadata import version
 import json
 
 import yaml
-from dcm_common.util import get_profile
 from dcm_common.services import FSConfig, OrchestratedAppConfig
 from dcm_common.plugins import PluginInterface, import_from_directory
 import dcm_ip_builder_api
@@ -24,9 +23,9 @@ from dcm_ip_builder.plugins.mapping import (
 from dcm_ip_builder.plugins import (
     BagItBagBuilder,
     BagItProfilePlugin,
-    PayloadStructurePlugin,
     SignificantPropertiesPlugin,
 )
+from dcm_ip_builder import util
 
 
 def plugin_ok(plugin: type[PluginInterface]) -> bool:
@@ -58,31 +57,11 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
     Configuration for the 'DCM IP Builder'.
     """
 
-    # ------ COMMON ------
-    # bagit profile
-    BAGIT_PROFILE_URL = (
-        os.environ.get("BAGIT_PROFILE_URL")
-        or "https://lzv.nrw/bagit_profile.json"
-    )
-    BAGIT_PROFILE = get_profile(
-        os.environ.get("BAGIT_PROFILE_URL")
-        or Path(dcm_ip_builder.__file__).parent
-        / "static"
-        / "bagit_profile.json"
-    )
-    # payload profile
-    PAYLOAD_PROFILE_URL = (
-        os.environ.get("PAYLOAD_PROFILE_URL")
-        or "https://lzv.nrw/payload_profile.json"
-    )
-    PAYLOAD_PROFILE = get_profile(
-        os.environ.get("PAYLOAD_PROFILE_URL")
-        or Path(dcm_ip_builder.__file__).parent
-        / "static"
-        / "payload_profile.json"
-    )
-
     # ------ BUILD ------
+    DEFAULT_BAGIT_PROFILE = os.environ.get(
+        "DEFAULT_BAGIT_PROFILE",
+        "https://github.com/lzv-nrw/spec-information-package/raw/refs/tags/0.7.0/profiles/lzvnrw_bagit_profile.json",
+    )
     ADDITIONAL_MAPPING_PLUGINS_DIR = (
         Path(os.environ.get("ADDITIONAL_MAPPING_PLUGINS_DIR"))
         if "ADDITIONAL_MAPPING_PLUGINS_DIR" in os.environ
@@ -120,6 +99,14 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
     DC_METADATA = Path("dc.xml")
 
     # ------ VALIDATION ------
+    # bagit profile
+    PROFILES_SRC = os.environ.get(
+        "PROFILES_SRC",
+        Path(dcm_ip_builder.__file__).parent / "static",
+    )
+    LOAD_BAGIT_PROFILE_FROM_BAG = (
+        int(os.environ.get("LOAD_BAGIT_PROFILE_FROM_BAG") or 0)
+    ) == 1
     # significant_properties.xml
     VALIDATION_SIGPROPXML_XSD = \
         os.environ.get("VALIDATION_SIGPROPXML_XSD") \
@@ -145,6 +132,42 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
     )
 
     def __init__(self) -> None:
+
+        # load profiles
+        try:
+            profiles_src = Path(
+                (self.FS_MOUNT_POINT / self.PROFILES_SRC).resolve()
+            )
+            if not profiles_src.is_dir():
+                raise FileNotFoundError("Not a directory.")
+        except (OSError, FileNotFoundError):
+            self.supported_profiles = util.load_profiles_from_string(
+                self.PROFILES_SRC
+            )
+        else:
+            self.supported_profiles = util.load_profiles_from_dir(
+                profiles_src
+            )
+
+        if len(self.supported_profiles) == 0:
+            print(
+                "\033[1;33m"
+                "WARNING: Service configured without supported profiles "
+                + "for validation."
+                + "\033[0m",
+                file=sys.stderr,
+            )
+
+        if self.DEFAULT_BAGIT_PROFILE not in self.supported_profiles:
+            print(
+                "\033[1;33m"
+                "WARNING: The default BagIt profile "
+                + f"'{self.DEFAULT_BAGIT_PROFILE}' is missing from the "
+                + "supported profiles "
+                + f"'{list(self.supported_profiles.keys())}'."
+                + "\033[0m",
+                file=sys.stderr,
+            )
         self.load_plugins()
         super().__init__()
 
@@ -167,12 +190,8 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
         # ------ VALIDATION ------
         self.validation_plugins = {
             BagItProfilePlugin.name: BagItProfilePlugin(
-                default_profile_url=self.BAGIT_PROFILE_URL,
-                default_profile=self.BAGIT_PROFILE,
-            ),
-            PayloadStructurePlugin.name: PayloadStructurePlugin(
-                default_profile_url=self.PAYLOAD_PROFILE_URL,
-                default_profile=self.PAYLOAD_PROFILE
+                supported_profiles=self.supported_profiles,
+                load_bagit_profile_from_bag=self.LOAD_BAGIT_PROFILE_FROM_BAG,
             ),
             SignificantPropertiesPlugin.name: SignificantPropertiesPlugin(
                 xml_path=self.META_DIRECTORY / self.SIGNIFICANT_PROPERTIES,
@@ -196,12 +215,6 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
         self.CONTAINER_SELF_DESCRIPTION["version"]["app"] = version(
             "dcm-ip-builder"
         )
-        self.CONTAINER_SELF_DESCRIPTION["version"]["profile"] = (
-            self.BAGIT_PROFILE["BagIt-Profile-Info"]["Version"]
-        )
-        self.CONTAINER_SELF_DESCRIPTION["version"]["profile_payload"] = (
-            self.PAYLOAD_PROFILE["BagIt-Payload-Profile-Info"]["Version"]
-        )
 
         # configuration
         # - settings
@@ -210,12 +223,11 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
             "output": str(self.IP_OUTPUT),
             "manifest": self.MANIFESTS,
             "tag_manifest": self.TAG_MANIFESTS,
-            "default_profile": self.BAGIT_PROFILE_URL,
-            "default_payload_profile": self.PAYLOAD_PROFILE_URL,
+            "default_profile": self.DEFAULT_BAGIT_PROFILE,
         }
         settings["validation"] = {
-            "default_profile": self.BAGIT_PROFILE_URL,
-            "default_payload_profile": self.PAYLOAD_PROFILE_URL,
+            "load_profile_from_bag": self.LOAD_BAGIT_PROFILE_FROM_BAG,
+            "supported_profiles": list(self.supported_profiles.keys()),
             "plugins": list(self.validation_plugins.keys()),
         }
         # - plugins
